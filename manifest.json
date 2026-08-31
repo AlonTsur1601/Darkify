@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Darkify",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Forces a natural-looking dark mode on light websites while preserving images and leaving already-dark sites untouched.",
   "permissions": ["storage", "tabs"],
   "host_permissions": ["<all_urls>"],

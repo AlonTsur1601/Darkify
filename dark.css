@@ -1,48 +1,56 @@
-/* The page is inverted once by a viewport overlay. Color images are rendered
-   once above it instead of being inverted and counter-inverted. This keeps
-   their original pixels and lets transparent areas show the darkened page. */
+/* Darkify rewrites document colors in place across the full document. */
 
 html.__force-dark-active__ {
-  /* This base color also passes through the inversion overlay. */
-  background-color: #fff !important;
+  color-scheme: dark !important;
+  background-color: #111315 !important;
 }
 
-#__fd_overlay__,
-#__fd_media_layer__ {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
+html.__force-dark-active__ body {
+  background-color: #111315 !important;
 }
 
-#__fd_overlay__ {
-  z-index: 2147483646;
-  backdrop-filter: invert(1) hue-rotate(180deg);
-  -webkit-backdrop-filter: invert(1) hue-rotate(180deg);
+html.__force-dark-active__ .__fd_color_adjusted__ {
+  background-color: var(--fd-bg) !important;
+  color: var(--fd-color) !important;
+  border-top-color: var(--fd-border-top) !important;
+  border-right-color: var(--fd-border-right) !important;
+  border-bottom-color: var(--fd-border-bottom) !important;
+  border-left-color: var(--fd-border-left) !important;
+  outline-color: var(--fd-outline) !important;
+  text-decoration-color: var(--fd-decoration) !important;
+  box-shadow: var(--fd-shadow) !important;
+  background-image: var(--fd-bg-image) !important;
 }
 
-#__fd_media_layer__ {
-  z-index: 2147483647;
-  overflow: hidden;
+html.__force-dark-active__ .__fd_color_adjusted__::before {
+  background-color: var(--fd-before-bg) !important;
+  color: var(--fd-before-color) !important;
 }
 
-html.__force-dark-active__ img.__fd_image_replaced__ {
-  opacity: 0 !important;
+html.__force-dark-active__ .__fd_color_adjusted__::after {
+  background-color: var(--fd-after-bg) !important;
+  color: var(--fd-after-color) !important;
 }
 
-.__fd_image_replica__ {
-  position: fixed;
-  overflow: hidden;
-  pointer-events: none;
+html.__force-dark-active__ svg.__fd_color_adjusted__,
+html.__force-dark-active__ svg .__fd_color_adjusted__ {
+  fill: var(--fd-fill) !important;
+  stroke: var(--fd-stroke) !important;
 }
 
-.__fd_image_replica__ > img {
-  position: absolute;
-  display: block;
-  max-width: none !important;
-  max-height: none !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
+/* Only confidently detected neutral image assets receive one inversion.
+   Color images and grayscale photographs remain entirely untouched. */
+html.__force-dark-active__ img.__fd_monochrome_image__ {
+  filter: var(--fd-original-filter) !important;
+}
+
+html.__force-dark-active__ input::placeholder,
+html.__force-dark-active__ textarea::placeholder {
+  color: #9da3aa !important;
+  opacity: 1 !important;
+}
+
+html.__force-dark-active__ ::selection {
+  background-color: #315a8a !important;
+  color: #f4f6f8 !important;
 }

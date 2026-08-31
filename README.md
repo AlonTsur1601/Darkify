@@ -20,13 +20,14 @@ click **Reload** on its card in `chrome://extensions`.
 ## How it works
 
 - Light pages are darkened only when the system prefers dark mode.
-- Color images are preserved without a double inversion.
-- Transparent images keep the darkened page visible through their transparent
-  pixels.
+- Document colors are rewritten in place across the entire page; Darkify does
+  not use a viewport-sized inversion overlay.
+- Color images and transparent images remain in their original DOM position
+  without a double inversion or a fixed-position copy.
 - Simple neutral icons are darkened with the page, while grayscale photographs
   remain unchanged.
 - Videos, canvases, embedded content and CSS image backgrounds retain their
-  original appearance.
+  original appearance while their surrounding UI is darkened.
 - The popup can enable or disable Darkify globally or override one hostname.
 
 ## Limitations
