@@ -31,6 +31,10 @@ click **Reload** on its card in `chrome://extensions`.
 - The popup can enable or disable Darkify globally or override one hostname.
 - Installing, updating or reloading Darkify also activates it in eligible tabs
   that were already open; those pages do not need to be refreshed manually.
+- Local dark widgets, authored glow/shadow colors, hover states and pages restored
+  from a background tab are re-evaluated without re-lightening the whole page.
+- Text is adjusted to at least a 4.5:1 contrast ratio and visible borders/icons
+  to at least 3:1 against their final local background.
 
 ## Limitations
 

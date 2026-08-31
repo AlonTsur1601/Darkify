@@ -12,17 +12,24 @@
   const INTERNAL_PROPERTIES = [
     '--fd-bg', '--fd-color', '--fd-border-top', '--fd-border-right',
     '--fd-border-bottom', '--fd-border-left', '--fd-outline', '--fd-decoration',
-    '--fd-shadow', '--fd-bg-image', '--fd-fill', '--fd-stroke',
-    '--fd-before-bg', '--fd-before-color', '--fd-after-bg', '--fd-after-color',
+    '--fd-shadow', '--fd-text-shadow', '--fd-bg-image', '--fd-fill', '--fd-stroke',
+    '--fd-caret', '--fd-column-rule', '--fd-accent',
+    '--fd-before-bg', '--fd-before-color', '--fd-before-border',
+    '--fd-before-shadow', '--fd-before-text-shadow', '--fd-before-bg-image',
+    '--fd-after-bg', '--fd-after-color', '--fd-after-border',
+    '--fd-after-shadow', '--fd-after-text-shadow', '--fd-after-bg-image',
     '--fd-original-filter'
   ];
 
   let settings = { enabled: true, siteOverrides: {} };
   let active = false;
   let workScheduled = false;
+  let urgentUntil = 0;
   const queuedElements = new Set();
   const adjustedElements = new Set();
   const observedRoots = new WeakSet();
+  const originalStyles = new WeakMap();
+  const internalAttributeStates = new WeakMap();
 
   function parseColor(value) {
     if (!value || value === 'transparent') return null;
@@ -109,40 +116,91 @@
     return (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
   }
 
+  function contrastRatio(firstLuminance, secondLuminance) {
+    const lighter = Math.max(firstLuminance, secondLuminance);
+    const darker = Math.min(firstLuminance, secondLuminance);
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+
+  function compositedLuminance(color, backgroundLuminance) {
+    const alpha = Number.isFinite(color.a) ? color.a : 1;
+    return relativeLuminance(color) * alpha + backgroundLuminance * (1 - alpha);
+  }
+
+  function ensureContrast(value, backgroundLuminance, minimumRatio) {
+    const color = parseColor(value);
+    if (!color || backgroundLuminance === null) return value;
+    if (contrastRatio(compositedLuminance(color, backgroundLuminance), backgroundLuminance) >= minimumRatio) return value;
+    const hsl = rgbToHsl(color);
+    const towardLight = backgroundLuminance < 0.45;
+    let lowerFraction = 0;
+    let upperFraction = 1;
+    let best = null;
+    for (let step = 0; step < 10; step++) {
+      const fraction = (lowerFraction + upperFraction) / 2;
+      const candidate = {
+        h: hsl.h,
+        s: Math.min(hsl.s, 0.72),
+        l: hsl.l + ((towardLight ? 0.96 : 0.04) - hsl.l) * fraction
+      };
+      const rendered = hslToRgb(candidate, color.a);
+      const renderedColor = parseColor(rendered);
+      if (
+        renderedColor
+        && contrastRatio(compositedLuminance(renderedColor, backgroundLuminance), backgroundLuminance) >= minimumRatio
+      ) {
+        best = rendered;
+        upperFraction = fraction;
+      } else {
+        lowerFraction = fraction;
+      }
+    }
+    if (best) return best;
+    return towardLight
+      ? hslToRgb({ h: hsl.h, s: Math.min(hsl.s, 0.45), l: 0.96 }, 1)
+      : hslToRgb({ h: hsl.h, s: Math.min(hsl.s, 0.45), l: 0.04 }, 1);
+  }
+
   function transformBackground(value) {
     const color = parseColor(value);
     if (!color || color.a === 0) return null;
     const hsl = rgbToHsl(color);
+    if (hsl.l <= 0.24) return value;
     if (chroma(color) >= 0.22) {
       hsl.l = Math.min(0.42, Math.max(0.18, hsl.l > 0.58 ? 0.36 : hsl.l));
       hsl.s = Math.min(hsl.s, 0.68);
-    } else if (hsl.l > 0.24) {
+    } else {
       hsl.l = 0.10 + (1 - hsl.l) * 0.26;
       hsl.s = Math.min(0.06, hsl.s * 0.25);
     }
     return hslToRgb(hsl, color.a);
   }
 
-  function transformForeground(value) {
+  function transformForeground(value, backgroundLuminance = null) {
     const color = parseColor(value);
     if (!color || color.a === 0) return null;
+    if (
+      backgroundLuminance !== null
+      && contrastRatio(compositedLuminance(color, backgroundLuminance), backgroundLuminance) >= 4.5
+    ) return value;
     const hsl = rgbToHsl(color);
     if (chroma(color) >= 0.20) {
       hsl.l = Math.max(0.64, Math.min(0.82, hsl.l));
       hsl.s = Math.min(hsl.s, 0.72);
-    } else if (hsl.l < 0.62) {
+    } else {
       hsl.l = 0.82 + (0.62 - hsl.l) * 0.10;
       hsl.s = Math.min(0.05, hsl.s * 0.25);
-    } else {
-      hsl.l = Math.min(hsl.l, 0.92);
-      hsl.s = Math.min(0.05, hsl.s * 0.25);
     }
-    return hslToRgb(hsl, color.a);
+    return ensureContrast(hslToRgb(hsl, color.a), backgroundLuminance, 4.5);
   }
 
-  function transformBorder(value) {
+  function transformBorder(value, backgroundLuminance = null) {
     const color = parseColor(value);
     if (!color || color.a === 0) return null;
+    if (
+      backgroundLuminance !== null
+      && contrastRatio(compositedLuminance(color, backgroundLuminance), backgroundLuminance) >= 3
+    ) return value;
     const hsl = rgbToHsl(color);
     if (chroma(color) >= 0.20) {
       hsl.l = Math.max(0.38, Math.min(0.58, hsl.l));
@@ -150,7 +208,7 @@
       hsl.l = Math.max(0.24, Math.min(0.36, hsl.l));
       hsl.s = Math.min(0.04, hsl.s * 0.2);
     }
-    return hslToRgb(hsl, color.a);
+    return ensureContrast(hslToRgb(hsl, color.a), backgroundLuminance, 3);
   }
 
   function rewriteColors(value, transform) {
@@ -163,6 +221,17 @@
       return replacement;
     });
     return changed ? rewritten : null;
+  }
+
+  function shadowNeedsColorFreeze(shadow, colorValue) {
+    const color = parseColor(colorValue);
+    return Boolean(
+      shadow
+      && shadow !== 'none'
+      && color
+      && relativeLuminance(color) < 0.25
+      && shadow.includes(colorValue)
+    );
   }
 
   function getVisibleBackgroundLuminance(element) {
@@ -211,6 +280,22 @@
     INTERNAL_PROPERTIES.forEach(property => element.style.removeProperty(property));
   }
 
+  function rememberInternalAttributeState(element) {
+    internalAttributeStates.set(element, {
+      className: element.getAttribute('class'),
+      style: element.getAttribute('style')
+    });
+  }
+
+  function isInternalAttributeMutation(element) {
+    const state = internalAttributeStates.get(element);
+    return Boolean(
+      state
+      && state.className === element.getAttribute('class')
+      && state.style === element.getAttribute('style')
+    );
+  }
+
   function setVariable(element, property, value) {
     if (value) element.style.setProperty(property, value);
   }
@@ -228,40 +313,103 @@
       outlineColor: style.outlineColor,
       textDecorationColor: style.textDecorationColor,
       boxShadow: style.boxShadow,
+      textShadow: style.textShadow,
       fill: style.fill,
       stroke: style.stroke,
+      caretColor: style.caretColor,
+      columnRuleColor: style.columnRuleColor,
+      accentColor: style.accentColor,
       filter: style.filter,
       content: style.content,
       display: style.display
     };
   }
 
+  function replaceResolvedColor(value, from, to) {
+    if (!value || !from || from === to) return value;
+    return value.split(from).join(to);
+  }
+
+  function replaceSnapshotColorReferences(style, from, to) {
+    [
+      'color', 'borderTopColor', 'borderRightColor', 'borderBottomColor',
+      'borderLeftColor', 'outlineColor', 'textDecorationColor', 'boxShadow',
+      'textShadow', 'fill', 'stroke', 'caretColor', 'columnRuleColor'
+    ].forEach(property => {
+      style[property] = replaceResolvedColor(style[property], from, to);
+    });
+  }
+
+  function normalizeInheritedColors(element, style, before, after) {
+    const parent = element.parentElement;
+    const parentOriginal = parent ? originalStyles.get(parent) : null;
+    if (!parent || !parentOriginal) return;
+    const inheritedCurrent = getComputedStyle(parent).color;
+    if (style.color !== inheritedCurrent) return;
+    const resolvedColor = style.color;
+    replaceSnapshotColorReferences(style, resolvedColor, parentOriginal.color);
+    replaceSnapshotColorReferences(before, resolvedColor, parentOriginal.color);
+    replaceSnapshotColorReferences(after, resolvedColor, parentOriginal.color);
+  }
+
+  function getFinalBackgroundLuminance(element) {
+    for (let current = element; current; current = current.parentElement) {
+      const snapshot = originalStyles.get(current);
+      const color = parseColor(snapshot?.backgroundColor || getComputedStyle(current).backgroundColor);
+      if (color && color.a > 0.2) {
+        const transformed = parseColor(transformBackground(
+          snapshot?.backgroundColor || getComputedStyle(current).backgroundColor
+        )) || color;
+        return relativeLuminance(transformed);
+      }
+    }
+    return null;
+  }
+
   function applyStyleSnapshot(element, style) {
+    const backgroundLuminance = getFinalBackgroundLuminance(element);
+    const transformLocalForeground = value => transformForeground(value, backgroundLuminance);
+    const transformLocalBorder = value => transformBorder(value, backgroundLuminance);
     setVariable(element, '--fd-bg', transformBackground(style.backgroundColor) || style.backgroundColor);
-    setVariable(element, '--fd-color', transformForeground(style.color) || style.color);
-    setVariable(element, '--fd-border-top', transformBorder(style.borderTopColor) || style.borderTopColor);
-    setVariable(element, '--fd-border-right', transformBorder(style.borderRightColor) || style.borderRightColor);
-    setVariable(element, '--fd-border-bottom', transformBorder(style.borderBottomColor) || style.borderBottomColor);
-    setVariable(element, '--fd-border-left', transformBorder(style.borderLeftColor) || style.borderLeftColor);
-    setVariable(element, '--fd-outline', transformBorder(style.outlineColor) || style.outlineColor);
-    setVariable(element, '--fd-decoration', transformForeground(style.textDecorationColor) || style.textDecorationColor);
-    setVariable(element, '--fd-shadow', rewriteColors(style.boxShadow, transformBorder) || style.boxShadow);
+    setVariable(element, '--fd-color', transformLocalForeground(style.color) || style.color);
+    setVariable(element, '--fd-border-top', transformLocalBorder(style.borderTopColor) || style.borderTopColor);
+    setVariable(element, '--fd-border-right', transformLocalBorder(style.borderRightColor) || style.borderRightColor);
+    setVariable(element, '--fd-border-bottom', transformLocalBorder(style.borderBottomColor) || style.borderBottomColor);
+    setVariable(element, '--fd-border-left', transformLocalBorder(style.borderLeftColor) || style.borderLeftColor);
+    setVariable(element, '--fd-outline', transformLocalBorder(style.outlineColor) || style.outlineColor);
+    setVariable(element, '--fd-decoration', transformLocalForeground(style.textDecorationColor) || style.textDecorationColor);
+    if (shadowNeedsColorFreeze(style.textShadow, style.color)) {
+      setVariable(element, '--fd-text-shadow', style.textShadow);
+    }
     setVariable(element, '--fd-bg-image', rewriteColors(style.backgroundImage, transformBackground) || style.backgroundImage);
+    setVariable(element, '--fd-caret', transformLocalForeground(style.caretColor) || style.caretColor);
+    setVariable(element, '--fd-column-rule', transformLocalBorder(style.columnRuleColor) || style.columnRuleColor);
+    if (style.accentColor !== 'auto') {
+      setVariable(element, '--fd-accent', transformLocalForeground(style.accentColor) || style.accentColor);
+    }
     if (element instanceof SVGElement) {
-      setVariable(element, '--fd-fill', transformForeground(style.fill) || style.fill);
-      setVariable(element, '--fd-stroke', transformForeground(style.stroke) || style.stroke);
+      setVariable(element, '--fd-fill', transformLocalForeground(style.fill) || style.fill);
+      setVariable(element, '--fd-stroke', transformLocalForeground(style.stroke) || style.stroke);
     }
   }
 
+  function applyPseudoStyle(element, prefix, style) {
+    if (style.content === 'none' || style.display === 'none') return;
+    const backgroundLuminance = getFinalBackgroundLuminance(element);
+    const transformLocalForeground = value => transformForeground(value, backgroundLuminance);
+    const transformLocalBorder = value => transformBorder(value, backgroundLuminance);
+    setVariable(element, `--fd-${prefix}-bg`, transformBackground(style.backgroundColor) || style.backgroundColor);
+    setVariable(element, `--fd-${prefix}-color`, transformLocalForeground(style.color) || style.color);
+    setVariable(element, `--fd-${prefix}-border`, transformLocalBorder(style.borderTopColor) || style.borderTopColor);
+    if (shadowNeedsColorFreeze(style.textShadow, style.color)) {
+      setVariable(element, `--fd-${prefix}-text-shadow`, style.textShadow);
+    }
+    setVariable(element, `--fd-${prefix}-bg-image`, rewriteColors(style.backgroundImage, transformBackground) || style.backgroundImage);
+  }
+
   function applyPseudoStyles(element, before, after) {
-    if (before.content !== 'none' && before.display !== 'none') {
-      setVariable(element, '--fd-before-bg', transformBackground(before.backgroundColor) || before.backgroundColor);
-      setVariable(element, '--fd-before-color', transformForeground(before.color) || before.color);
-    }
-    if (after.content !== 'none' && after.display !== 'none') {
-      setVariable(element, '--fd-after-bg', transformBackground(after.backgroundColor) || after.backgroundColor);
-      setVariable(element, '--fd-after-color', transformForeground(after.color) || after.color);
-    }
+    applyPseudoStyle(element, 'before', before);
+    applyPseudoStyle(element, 'after', after);
   }
 
   function percentile(values, fraction) {
@@ -324,6 +472,7 @@
       image.classList.toggle(MONOCHROME_CLASS, isMonochromeImage(image));
       const baseFilter = style.filter === 'none' ? '' : `${style.filter} `;
       setVariable(image, '--fd-original-filter', `${baseFilter}invert(1) hue-rotate(180deg) brightness(0.9)`);
+      rememberInternalAttributeState(image);
     };
     if (image.complete && image.naturalWidth) classify();
     else image.addEventListener('load', classify, { once: true });
@@ -338,13 +487,15 @@
       prepared.push({ element, wasMonochrome });
     });
 
-    const snapshots = prepared.map(({ element, wasMonochrome }) => ({
-      element,
-      wasMonochrome,
-      style: snapshotStyle(element),
-      before: snapshotStyle(element, '::before'),
-      after: snapshotStyle(element, '::after')
-    }));
+    const snapshots = prepared.map(({ element, wasMonochrome }) => {
+      const style = snapshotStyle(element);
+      const before = snapshotStyle(element, '::before');
+      const after = snapshotStyle(element, '::after');
+      normalizeInheritedColors(element, style, before, after);
+      return { element, wasMonochrome, style, before, after };
+    });
+
+    snapshots.forEach(({ element, style }) => originalStyles.set(element, style));
 
     snapshots.forEach(({ element, wasMonochrome, style, before, after }) => {
       applyStyleSnapshot(element, style);
@@ -354,6 +505,7 @@
         if (wasMonochrome) element.classList.add(MONOCHROME_CLASS);
         processImage(element, style);
       }
+      rememberInternalAttributeState(element);
       adjustedElements.add(element);
     });
   }
@@ -376,8 +528,18 @@
   function scheduleWork() {
     if (workScheduled || !active) return;
     workScheduled = true;
-    if ('requestIdleCallback' in window) requestIdleCallback(runWork, { timeout: 120 });
+    if (document.visibilityState === 'visible' && performance.now() < urgentUntil) {
+      setTimeout(() => runWork(null), 0);
+    } else if ('requestIdleCallback' in window) requestIdleCallback(runWork, { timeout: 120 });
     else setTimeout(() => runWork(null), 0);
+  }
+
+  function requestUrgentRefresh(root = document.documentElement) {
+    if (!active || !root) return;
+    urgentUntil = performance.now() + 2000;
+    const hadScheduledWork = workScheduled;
+    enqueueRoot(root);
+    if (hadScheduledWork) setTimeout(() => runWork(null), 0);
   }
 
   function enqueueElement(element) {
@@ -401,8 +563,12 @@
           if (node.nodeType === 1) enqueueRoot(node);
         });
       } else {
+        if (
+          (mutation.attributeName === 'class' || mutation.attributeName === 'style')
+          && isInternalAttributeMutation(mutation.target)
+        ) return;
         if (mutation.target instanceof HTMLImageElement) delete mutation.target.dataset.fdImageSignature;
-        enqueueElement(mutation.target);
+        enqueueRoot(mutation.target);
       }
     });
   });
@@ -412,7 +578,10 @@
     observedRoots.add(root);
     observer.observe(root, {
       attributes: true,
-      attributeFilter: ['src', 'srcset'],
+      attributeFilter: [
+        'class', 'style', 'src', 'srcset', 'fill', 'stroke', 'color',
+        'bgcolor', 'border', 'open', 'hidden', 'disabled', 'checked', 'selected'
+      ],
       childList: true,
       subtree: true
     });
@@ -440,7 +609,7 @@
     active = true;
     document.documentElement.classList.add(ACTIVE_CLASS);
     observeRoot(document.documentElement);
-    enqueueRoot(document.documentElement);
+    requestUrgentRefresh();
   }
 
   function scheduleApply() {
@@ -448,9 +617,34 @@
     else apply();
   }
 
-  window.addEventListener('pageshow', event => {
-    if (event.persisted && !active) apply();
+  window.addEventListener('pageshow', () => {
+    if (!active) apply();
+    else requestUrgentRefresh();
   });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      if (!active) apply();
+      else requestUrgentRefresh();
+    }
+  });
+
+  const refreshInteractionPath = event => {
+    if (!active) return;
+    const path = event.composedPath();
+    setTimeout(() => {
+      urgentUntil = performance.now() + 500;
+      path.forEach(node => {
+        if (node instanceof Element) enqueueElement(node);
+      });
+      scheduleWork();
+    }, 0);
+  };
+
+  [
+    'pointerover', 'pointerout', 'focusin', 'focusout',
+    'transitionrun', 'transitionend', 'animationstart', 'animationiteration', 'animationend'
+  ].forEach(type => document.addEventListener(type, refreshInteractionPath, true));
 
   darkModeQuery.addEventListener('change', apply);
   chrome.storage.sync.get(['enabled', 'siteOverrides'], data => {
