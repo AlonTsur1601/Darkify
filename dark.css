@@ -1,0 +1,48 @@
+/* The page is inverted once by a viewport overlay. Color images are rendered
+   once above it instead of being inverted and counter-inverted. This keeps
+   their original pixels and lets transparent areas show the darkened page. */
+
+html.__force-dark-active__ {
+  /* This base color also passes through the inversion overlay. */
+  background-color: #fff !important;
+}
+
+#__fd_overlay__,
+#__fd_media_layer__ {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#__fd_overlay__ {
+  z-index: 2147483646;
+  backdrop-filter: invert(1) hue-rotate(180deg);
+  -webkit-backdrop-filter: invert(1) hue-rotate(180deg);
+}
+
+#__fd_media_layer__ {
+  z-index: 2147483647;
+  overflow: hidden;
+}
+
+html.__force-dark-active__ img.__fd_image_replaced__ {
+  opacity: 0 !important;
+}
+
+.__fd_image_replica__ {
+  position: fixed;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.__fd_image_replica__ > img {
+  position: absolute;
+  display: block;
+  max-width: none !important;
+  max-height: none !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
