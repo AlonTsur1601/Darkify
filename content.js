@@ -101,15 +101,20 @@
     return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
   }
 
+  function chroma({ r, g, b }) {
+    return (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
+  }
+
   function transformBackground(value) {
     const color = parseColor(value);
     if (!color || color.a === 0) return null;
     const hsl = rgbToHsl(color);
-    if (hsl.s >= 0.32) {
+    if (chroma(color) >= 0.22) {
       hsl.l = Math.min(0.42, Math.max(0.18, hsl.l > 0.58 ? 0.36 : hsl.l));
-      hsl.s = Math.min(hsl.s, 0.82);
+      hsl.s = Math.min(hsl.s, 0.68);
     } else if (hsl.l > 0.24) {
       hsl.l = 0.10 + (1 - hsl.l) * 0.26;
+      hsl.s = Math.min(0.06, hsl.s * 0.25);
     }
     return hslToRgb(hsl, color.a);
   }
@@ -118,13 +123,15 @@
     const color = parseColor(value);
     if (!color || color.a === 0) return null;
     const hsl = rgbToHsl(color);
-    if (hsl.s >= 0.28) {
+    if (chroma(color) >= 0.20) {
       hsl.l = Math.max(0.64, Math.min(0.82, hsl.l));
-      hsl.s = Math.min(hsl.s, 0.86);
+      hsl.s = Math.min(hsl.s, 0.72);
     } else if (hsl.l < 0.62) {
       hsl.l = 0.82 + (0.62 - hsl.l) * 0.10;
+      hsl.s = Math.min(0.05, hsl.s * 0.25);
     } else {
       hsl.l = Math.min(hsl.l, 0.92);
+      hsl.s = Math.min(0.05, hsl.s * 0.25);
     }
     return hslToRgb(hsl, color.a);
   }
@@ -133,10 +140,11 @@
     const color = parseColor(value);
     if (!color || color.a === 0) return null;
     const hsl = rgbToHsl(color);
-    if (hsl.s >= 0.28) {
+    if (chroma(color) >= 0.20) {
       hsl.l = Math.max(0.38, Math.min(0.58, hsl.l));
     } else {
       hsl.l = Math.max(0.24, Math.min(0.36, hsl.l));
+      hsl.s = Math.min(0.04, hsl.s * 0.2);
     }
     return hslToRgb(hsl, color.a);
   }
@@ -190,6 +198,7 @@
     if (override === false) return false;
     if (override === true) return true;
     if (!settings.enabled || !darkModeQuery.matches) return false;
+    if (active) return true;
     return !siteLooksAlreadyDark();
   }
 
@@ -423,6 +432,7 @@
       clearAllAdjustments();
       return;
     }
+    if (active) return;
     active = true;
     document.documentElement.classList.add(ACTIVE_CLASS);
     observeRoot(document.documentElement);
@@ -432,8 +442,11 @@
   function scheduleApply() {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply, { once: true });
     else apply();
-    window.addEventListener('load', apply, { once: true });
   }
+
+  window.addEventListener('pageshow', event => {
+    if (event.persisted && !active) apply();
+  });
 
   darkModeQuery.addEventListener('change', apply);
   chrome.storage.sync.get(['enabled', 'siteOverrides'], data => {
