@@ -1,4 +1,8 @@
 (() => {
+  const contentVersion = chrome.runtime.getManifest().version;
+  if (window.__darkifyContentVersion === contentVersion) return;
+  window.__darkifyContentVersion = contentVersion;
+
   const ACTIVE_CLASS = '__force-dark-active__';
   const ADJUSTED_CLASS = '__fd_color_adjusted__';
   const MONOCHROME_CLASS = '__fd_monochrome_image__';

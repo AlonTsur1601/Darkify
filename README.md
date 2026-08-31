@@ -29,6 +29,8 @@ click **Reload** on its card in `chrome://extensions`.
 - Videos, canvases, embedded content and CSS image backgrounds retain their
   original appearance while their surrounding UI is darkened.
 - The popup can enable or disable Darkify globally or override one hostname.
+- Installing, updating or reloading Darkify also activates it in eligible tabs
+  that were already open; those pages do not need to be refreshed manually.
 
 ## Limitations
 
