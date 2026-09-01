@@ -1,5 +1,13 @@
 (() => {
   const contentVersion = chrome.runtime.getManifest().version;
+
+  // A previously injected development build referenced these names after
+  // removing their declarations. Keep a small compatibility bridge so that
+  // callbacks left behind in an already-open tab stop throwing as soon as the
+  // corrected content script is injected.
+  globalThis.MONOCHROME_CLASS ??= '__fd_monochrome_image__';
+  globalThis.isInternalAttributeMutation ??= () => true;
+
   if (window.__darkifyContentVersion === contentVersion) return;
   window.__darkifyContentVersion = contentVersion;
 

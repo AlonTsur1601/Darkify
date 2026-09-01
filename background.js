@@ -7,18 +7,40 @@ function initializeSettings() {
   });
 }
 
-async function missingDarkifyFrames(tabId, version) {
+async function darkifyFrameStates(tabId, version) {
   const results = await chrome.scripting.executeScript({
-        target: { tabId, allFrames: true },
-        func: expectedVersion => window.__darkifyContentVersion !== expectedVersion,
+    target: { tabId, allFrames: true },
+    func: expectedVersion => ({
+      installedVersion: window.__darkifyContentVersion || null,
+      needsInjection: window.__darkifyContentVersion !== expectedVersion
+    }),
     args: [version]
   });
-  return results.filter(result => result.result).map(result => result.frameId);
+  return results.map(result => ({
+    frameId: result.frameId,
+    installedVersion: result.result?.installedVersion || null,
+    needsInjection: Boolean(result.result?.needsInjection)
+  }));
 }
 
 async function injectIntoTab(tabId, version) {
   try {
-    const frameIds = await missingDarkifyFrames(tabId, version);
+    const frameStates = await darkifyFrameStates(tabId, version);
+    const hasPreviousVersion = frameStates.some(
+      state => state.installedVersion && state.installedVersion !== version
+    );
+    if (hasPreviousVersion) {
+      // An extension reload does not reliably stop observers and event
+      // listeners installed by the previous isolated world. Reload once when
+      // replacing a running Darkify version so the tab cannot run two color
+      // engines at the same time.
+      await chrome.tabs.reload(tabId);
+      return;
+    }
+
+    const frameIds = frameStates
+      .filter(state => state.needsInjection)
+      .map(state => state.frameId);
     if (!frameIds.length) return;
     const target = { tabId, frameIds };
     await chrome.scripting.insertCSS({ target, files: ['dark.css'] });
