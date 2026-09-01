@@ -10,25 +10,38 @@ function initializeSettings() {
 async function darkifyFrameStates(tabId, version) {
   const results = await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
-    func: expectedVersion => ({
-      installedVersion: window.__darkifyContentVersion || null,
-      needsInjection: window.__darkifyContentVersion !== expectedVersion
-    }),
+    func: expectedVersion => {
+      const documentVersion = document.documentElement?.getAttribute('data-fd-version') || null;
+      const installedVersion = window.__darkifyContentVersion || documentVersion;
+      const hasLegacyState = Boolean(
+        document.documentElement?.classList.contains('__force-dark-active__')
+        || document.querySelector(
+          '[data-fd-adjusted], [data-fd-monochrome], .__fd_color_adjusted__, .__fd_monochrome_image__'
+        )
+      );
+      return {
+        installedVersion: installedVersion || null,
+        needsInjection: installedVersion !== expectedVersion,
+        needsReload: Boolean(
+          (installedVersion && installedVersion !== expectedVersion)
+          || (!installedVersion && hasLegacyState)
+        )
+      };
+    },
     args: [version]
   });
   return results.map(result => ({
     frameId: result.frameId,
     installedVersion: result.result?.installedVersion || null,
-    needsInjection: Boolean(result.result?.needsInjection)
+    needsInjection: Boolean(result.result?.needsInjection),
+    needsReload: Boolean(result.result?.needsReload)
   }));
 }
 
 async function injectIntoTab(tabId, version) {
   try {
     const frameStates = await darkifyFrameStates(tabId, version);
-    const hasPreviousVersion = frameStates.some(
-      state => state.installedVersion && state.installedVersion !== version
-    );
+    const hasPreviousVersion = frameStates.some(state => state.needsReload);
     if (hasPreviousVersion) {
       // An extension reload does not reliably stop observers and event
       // listeners installed by the previous isolated world. Reload once when

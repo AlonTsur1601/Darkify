@@ -12,6 +12,7 @@
   window.__darkifyContentVersion = contentVersion;
 
   const ACTIVE_CLASS = '__force-dark-active__';
+  const VERSION_ATTRIBUTE = 'data-fd-version';
   const ADJUSTED_ATTRIBUTE = 'data-fd-adjusted';
   const MONOCHROME_ATTRIBUTE = 'data-fd-monochrome';
   const host = location.hostname;
@@ -28,6 +29,56 @@
     '--fd-after-shadow', '--fd-after-text-shadow', '--fd-after-bg-image',
     '--fd-original-filter'
   ];
+
+  const SHADOW_STYLE_ATTRIBUTE = 'data-fd-shadow-styles';
+  const SHADOW_STYLE_TEXT = `
+    :host-context(html.__force-dark-active__) [data-fd-adjusted] {
+      background-color: var(--fd-bg) !important;
+      color: var(--fd-color) !important;
+      border-top-color: var(--fd-border-top) !important;
+      border-right-color: var(--fd-border-right) !important;
+      border-bottom-color: var(--fd-border-bottom) !important;
+      border-left-color: var(--fd-border-left) !important;
+      outline-color: var(--fd-outline) !important;
+      text-decoration-color: var(--fd-decoration) !important;
+      text-shadow: var(--fd-text-shadow) !important;
+      background-image: var(--fd-bg-image) !important;
+      caret-color: var(--fd-caret) !important;
+      column-rule-color: var(--fd-column-rule) !important;
+      accent-color: var(--fd-accent) !important;
+    }
+    :host-context(html.__force-dark-active__) [data-fd-adjusted]::before {
+      background-color: var(--fd-before-bg) !important;
+      color: var(--fd-before-color) !important;
+      border-color: var(--fd-before-border) !important;
+      text-shadow: var(--fd-before-text-shadow) !important;
+      background-image: var(--fd-before-bg-image) !important;
+    }
+    :host-context(html.__force-dark-active__) [data-fd-adjusted]::after {
+      background-color: var(--fd-after-bg) !important;
+      color: var(--fd-after-color) !important;
+      border-color: var(--fd-after-border) !important;
+      text-shadow: var(--fd-after-text-shadow) !important;
+      background-image: var(--fd-after-bg-image) !important;
+    }
+    :host-context(html.__force-dark-active__) svg[data-fd-adjusted],
+    :host-context(html.__force-dark-active__) svg [data-fd-adjusted] {
+      fill: var(--fd-fill) !important;
+      stroke: var(--fd-stroke) !important;
+    }
+    :host-context(html.__force-dark-active__) img[data-fd-monochrome] {
+      filter: var(--fd-original-filter) !important;
+    }
+    :host-context(html.__force-dark-active__) input::placeholder,
+    :host-context(html.__force-dark-active__) textarea::placeholder {
+      color: #9da3aa !important;
+      opacity: 1 !important;
+    }
+    :host-context(html.__force-dark-active__) ::selection {
+      background-color: #315a8a !important;
+      color: #f4f6f8 !important;
+    }
+  `;
 
   let settings = { enabled: true, siteOverrides: {} };
   let active = false;
@@ -621,6 +672,12 @@
   });
 
   function observeRoot(root) {
+    if (root instanceof ShadowRoot && !root.querySelector(`style[${SHADOW_STYLE_ATTRIBUTE}]`)) {
+      const style = document.createElement('style');
+      style.setAttribute(SHADOW_STYLE_ATTRIBUTE, '');
+      style.textContent = SHADOW_STYLE_TEXT;
+      root.prepend(style);
+    }
     if (observedRoots.has(root)) return;
     observedRoots.add(root);
     observer.observe(root, {
@@ -645,6 +702,7 @@
   }
 
   function apply() {
+    document.documentElement.setAttribute(VERSION_ATTRIBUTE, contentVersion);
     const nextActive = shouldForceDark();
     if (!nextActive) {
       active = false;
