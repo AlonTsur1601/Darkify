@@ -9,7 +9,7 @@ html.__force-dark-active__ body {
   background-color: #111315 !important;
 }
 
-html.__force-dark-active__ .__fd_color_adjusted__ {
+html.__force-dark-active__ [data-fd-adjusted] {
   background-color: var(--fd-bg) !important;
   color: var(--fd-color) !important;
   border-top-color: var(--fd-border-top) !important;
@@ -25,7 +25,7 @@ html.__force-dark-active__ .__fd_color_adjusted__ {
   accent-color: var(--fd-accent) !important;
 }
 
-html.__force-dark-active__ .__fd_color_adjusted__::before {
+html.__force-dark-active__ [data-fd-adjusted]::before {
   background-color: var(--fd-before-bg) !important;
   color: var(--fd-before-color) !important;
   border-color: var(--fd-before-border) !important;
@@ -33,7 +33,7 @@ html.__force-dark-active__ .__fd_color_adjusted__::before {
   background-image: var(--fd-before-bg-image) !important;
 }
 
-html.__force-dark-active__ .__fd_color_adjusted__::after {
+html.__force-dark-active__ [data-fd-adjusted]::after {
   background-color: var(--fd-after-bg) !important;
   color: var(--fd-after-color) !important;
   border-color: var(--fd-after-border) !important;
@@ -41,15 +41,15 @@ html.__force-dark-active__ .__fd_color_adjusted__::after {
   background-image: var(--fd-after-bg-image) !important;
 }
 
-html.__force-dark-active__ svg.__fd_color_adjusted__,
-html.__force-dark-active__ svg .__fd_color_adjusted__ {
+html.__force-dark-active__ svg[data-fd-adjusted],
+html.__force-dark-active__ svg [data-fd-adjusted] {
   fill: var(--fd-fill) !important;
   stroke: var(--fd-stroke) !important;
 }
 
 /* Only confidently detected neutral image assets receive one inversion.
    Color images and grayscale photographs remain entirely untouched. */
-html.__force-dark-active__ img.__fd_monochrome_image__ {
+html.__force-dark-active__ img[data-fd-monochrome] {
   filter: var(--fd-original-filter) !important;
 }
 

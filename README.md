@@ -35,6 +35,8 @@ click **Reload** on its card in `chrome://extensions`.
   from a background tab are re-evaluated without re-lightening the whole page.
 - Text is adjusted to at least a 4.5:1 contrast ratio and visible borders/icons
   to at least 3:1 against their final local background.
+- Monochrome images are inverted only when that improves contrast; their dominant
+  tone is kept at 3:1 or better against the surrounding surface.
 
 ## Limitations
 

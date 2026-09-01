@@ -4,8 +4,8 @@
   window.__darkifyContentVersion = contentVersion;
 
   const ACTIVE_CLASS = '__force-dark-active__';
-  const ADJUSTED_CLASS = '__fd_color_adjusted__';
-  const MONOCHROME_CLASS = '__fd_monochrome_image__';
+  const ADJUSTED_ATTRIBUTE = 'data-fd-adjusted';
+  const MONOCHROME_ATTRIBUTE = 'data-fd-monochrome';
   const host = location.hostname;
   const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -24,12 +24,11 @@
   let settings = { enabled: true, siteOverrides: {} };
   let active = false;
   let workScheduled = false;
-  let urgentUntil = 0;
   const queuedElements = new Set();
   const adjustedElements = new Set();
   const observedRoots = new WeakSet();
   const originalStyles = new WeakMap();
-  const internalAttributeStates = new WeakMap();
+  const internalStyleStates = new WeakMap();
 
   function parseColor(value) {
     if (!value || value === 'transparent') return null;
@@ -276,28 +275,21 @@
   }
 
   function removeInternalStyles(element) {
-    element.classList.remove(ADJUSTED_CLASS, MONOCHROME_CLASS);
+    element.removeAttribute(ADJUSTED_ATTRIBUTE);
+    element.removeAttribute(MONOCHROME_ATTRIBUTE);
     INTERNAL_PROPERTIES.forEach(property => element.style.removeProperty(property));
-  }
-
-  function rememberInternalAttributeState(element) {
-    internalAttributeStates.set(element, {
-      className: element.getAttribute('class'),
-      style: element.getAttribute('style')
-    });
-  }
-
-  function isInternalAttributeMutation(element) {
-    const state = internalAttributeStates.get(element);
-    return Boolean(
-      state
-      && state.className === element.getAttribute('class')
-      && state.style === element.getAttribute('style')
-    );
   }
 
   function setVariable(element, property, value) {
     if (value) element.style.setProperty(property, value);
+  }
+
+  function setChangedVariable(element, property, original, transformed) {
+    if (transformed && transformed !== original) element.style.setProperty(property, transformed);
+  }
+
+  function rememberInternalStyle(element) {
+    internalStyleStates.set(element, element.getAttribute('style'));
   }
 
   function snapshotStyle(element, pseudo = null) {
@@ -310,14 +302,21 @@
       borderRightColor: style.borderRightColor,
       borderBottomColor: style.borderBottomColor,
       borderLeftColor: style.borderLeftColor,
+      borderTopStyle: style.borderTopStyle,
+      borderRightStyle: style.borderRightStyle,
+      borderBottomStyle: style.borderBottomStyle,
+      borderLeftStyle: style.borderLeftStyle,
       outlineColor: style.outlineColor,
+      outlineStyle: style.outlineStyle,
       textDecorationColor: style.textDecorationColor,
+      textDecorationLine: style.textDecorationLine,
       boxShadow: style.boxShadow,
       textShadow: style.textShadow,
       fill: style.fill,
       stroke: style.stroke,
       caretColor: style.caretColor,
       columnRuleColor: style.columnRuleColor,
+      columnRuleStyle: style.columnRuleStyle,
       accentColor: style.accentColor,
       filter: style.filter,
       content: style.content,
@@ -370,26 +369,30 @@
     const backgroundLuminance = getFinalBackgroundLuminance(element);
     const transformLocalForeground = value => transformForeground(value, backgroundLuminance);
     const transformLocalBorder = value => transformBorder(value, backgroundLuminance);
-    setVariable(element, '--fd-bg', transformBackground(style.backgroundColor) || style.backgroundColor);
-    setVariable(element, '--fd-color', transformLocalForeground(style.color) || style.color);
-    setVariable(element, '--fd-border-top', transformLocalBorder(style.borderTopColor) || style.borderTopColor);
-    setVariable(element, '--fd-border-right', transformLocalBorder(style.borderRightColor) || style.borderRightColor);
-    setVariable(element, '--fd-border-bottom', transformLocalBorder(style.borderBottomColor) || style.borderBottomColor);
-    setVariable(element, '--fd-border-left', transformLocalBorder(style.borderLeftColor) || style.borderLeftColor);
-    setVariable(element, '--fd-outline', transformLocalBorder(style.outlineColor) || style.outlineColor);
-    setVariable(element, '--fd-decoration', transformLocalForeground(style.textDecorationColor) || style.textDecorationColor);
+    setChangedVariable(element, '--fd-bg', style.backgroundColor, transformBackground(style.backgroundColor));
+    setChangedVariable(element, '--fd-color', style.color, transformLocalForeground(style.color));
+    if (style.borderTopStyle !== 'none') setChangedVariable(element, '--fd-border-top', style.borderTopColor, transformLocalBorder(style.borderTopColor));
+    if (style.borderRightStyle !== 'none') setChangedVariable(element, '--fd-border-right', style.borderRightColor, transformLocalBorder(style.borderRightColor));
+    if (style.borderBottomStyle !== 'none') setChangedVariable(element, '--fd-border-bottom', style.borderBottomColor, transformLocalBorder(style.borderBottomColor));
+    if (style.borderLeftStyle !== 'none') setChangedVariable(element, '--fd-border-left', style.borderLeftColor, transformLocalBorder(style.borderLeftColor));
+    if (style.outlineStyle !== 'none') setChangedVariable(element, '--fd-outline', style.outlineColor, transformLocalBorder(style.outlineColor));
+    if (style.textDecorationLine !== 'none') setChangedVariable(element, '--fd-decoration', style.textDecorationColor, transformLocalForeground(style.textDecorationColor));
     if (shadowNeedsColorFreeze(style.textShadow, style.color)) {
       setVariable(element, '--fd-text-shadow', style.textShadow);
     }
-    setVariable(element, '--fd-bg-image', rewriteColors(style.backgroundImage, transformBackground) || style.backgroundImage);
-    setVariable(element, '--fd-caret', transformLocalForeground(style.caretColor) || style.caretColor);
-    setVariable(element, '--fd-column-rule', transformLocalBorder(style.columnRuleColor) || style.columnRuleColor);
-    if (style.accentColor !== 'auto') {
-      setVariable(element, '--fd-accent', transformLocalForeground(style.accentColor) || style.accentColor);
+    setChangedVariable(element, '--fd-bg-image', style.backgroundImage, rewriteColors(style.backgroundImage, transformBackground));
+    if (element.matches('input, textarea, [contenteditable="true"]')) {
+      setChangedVariable(element, '--fd-caret', style.caretColor, transformLocalForeground(style.caretColor));
+    }
+    if (style.columnRuleStyle !== 'none') {
+      setChangedVariable(element, '--fd-column-rule', style.columnRuleColor, transformLocalBorder(style.columnRuleColor));
+    }
+    if (style.accentColor !== 'auto' && element.matches('input, progress')) {
+      setChangedVariable(element, '--fd-accent', style.accentColor, transformLocalForeground(style.accentColor));
     }
     if (element instanceof SVGElement) {
-      setVariable(element, '--fd-fill', transformLocalForeground(style.fill) || style.fill);
-      setVariable(element, '--fd-stroke', transformLocalForeground(style.stroke) || style.stroke);
+      setChangedVariable(element, '--fd-fill', style.fill, transformLocalForeground(style.fill));
+      setChangedVariable(element, '--fd-stroke', style.stroke, transformLocalForeground(style.stroke));
     }
   }
 
@@ -398,13 +401,13 @@
     const backgroundLuminance = getFinalBackgroundLuminance(element);
     const transformLocalForeground = value => transformForeground(value, backgroundLuminance);
     const transformLocalBorder = value => transformBorder(value, backgroundLuminance);
-    setVariable(element, `--fd-${prefix}-bg`, transformBackground(style.backgroundColor) || style.backgroundColor);
-    setVariable(element, `--fd-${prefix}-color`, transformLocalForeground(style.color) || style.color);
-    setVariable(element, `--fd-${prefix}-border`, transformLocalBorder(style.borderTopColor) || style.borderTopColor);
+    setChangedVariable(element, `--fd-${prefix}-bg`, style.backgroundColor, transformBackground(style.backgroundColor));
+    setChangedVariable(element, `--fd-${prefix}-color`, style.color, transformLocalForeground(style.color));
+    if (style.borderTopStyle !== 'none') setChangedVariable(element, `--fd-${prefix}-border`, style.borderTopColor, transformLocalBorder(style.borderTopColor));
     if (shadowNeedsColorFreeze(style.textShadow, style.color)) {
       setVariable(element, `--fd-${prefix}-text-shadow`, style.textShadow);
     }
-    setVariable(element, `--fd-${prefix}-bg-image`, rewriteColors(style.backgroundImage, transformBackground) || style.backgroundImage);
+    setChangedVariable(element, `--fd-${prefix}-bg-image`, style.backgroundImage, rewriteColors(style.backgroundImage, transformBackground));
   }
 
   function applyPseudoStyles(element, before, after) {
@@ -418,17 +421,19 @@
     return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
   }
 
-  function isMonochromeImage(img) {
+  function analyzeMonochromeImage(img, originalFilter = 'none') {
     try {
       const size = 32;
       const canvas = document.createElement('canvas');
       canvas.width = size;
       canvas.height = size;
       const context = canvas.getContext('2d', { willReadFrequently: true });
-      if (!context) return false;
+      if (!context) return { monochrome: false, luminance: 0 };
+      if (originalFilter !== 'none') context.filter = originalFilter;
       context.drawImage(img, 0, 0, size, size);
       const pixels = context.getImageData(0, 0, size, size).data;
       const chromaValues = [];
+      const luminanceValues = [];
       const luminanceBins = new Set();
       let visible = 0;
       let transparent = 0;
@@ -447,32 +452,65 @@
         const luminance = 0.299 * red + 0.587 * green + 0.114 * blue;
         visible++;
         chromaValues.push(chroma);
+        luminanceValues.push(luminance);
         luminanceBins.add(Math.min(15, Math.floor(luminance / 16)));
         if (chroma > 22) colored++;
         if (luminance < 42 || luminance > 213) nearExtremes++;
       }
-      if (!visible) return true;
+      if (!visible) return { monochrome: true, luminance: 1 };
       const neutral = colored / visible <= 0.025 && percentile(chromaValues, 0.95) <= 18;
-      if (!neutral) return false;
+      if (!neutral) return { monochrome: false, luminance: 0 };
       const transparentRatio = transparent / (visible + transparent);
       const extremeRatio = nearExtremes / visible;
       const smallAsset = img.naturalWidth <= 192 && img.naturalHeight <= 192;
-      return luminanceBins.size <= 6 || (smallAsset && (transparentRatio >= 0.08 || extremeRatio >= 0.72));
+      return {
+        monochrome: luminanceBins.size <= 6 || (smallAsset && (transparentRatio >= 0.08 || extremeRatio >= 0.72)),
+        luminance: percentile(luminanceValues, 0.5) / 255
+      };
     } catch (error) {
-      return false;
+      return { monochrome: false, luminance: 0 };
     }
+  }
+
+  function monochromeFilter(image, style, analysis) {
+    const backgroundLuminance = getFinalBackgroundLuminance(image) ?? 0.01;
+    const originalLuminance = relativeLuminance({
+      r: analysis.luminance * 255,
+      g: analysis.luminance * 255,
+      b: analysis.luminance * 255
+    });
+    const invertedValue = 1 - analysis.luminance;
+    const invertedLuminance = relativeLuminance({
+      r: invertedValue * 255,
+      g: invertedValue * 255,
+      b: invertedValue * 255
+    });
+    const originalContrast = contrastRatio(originalLuminance, backgroundLuminance);
+    const invertedContrast = contrastRatio(invertedLuminance, backgroundLuminance);
+    const baseFilter = style.filter === 'none' ? '' : `${style.filter} `;
+    if (originalContrast >= 3) return baseFilter || 'none';
+    if (invertedContrast >= 3 && invertedContrast > originalContrast) {
+      return `${baseFilter}invert(1) hue-rotate(180deg)`.trim();
+    }
+    return backgroundLuminance < 0.45
+      ? `${baseFilter}brightness(0) invert(1)`.trim()
+      : `${baseFilter}brightness(0)`.trim();
   }
 
   function processImage(image, style) {
     const classify = () => {
       if (!active || !image.isConnected) return;
-      const signature = `${image.currentSrc || image.src}|${image.naturalWidth}x${image.naturalHeight}`;
+      const backgroundSignature = (getFinalBackgroundLuminance(image) ?? 0).toFixed(3);
+      const signature = `${image.currentSrc || image.src}|${image.naturalWidth}x${image.naturalHeight}|${backgroundSignature}`;
       if (image.dataset.fdImageSignature === signature) return;
       image.dataset.fdImageSignature = signature;
-      image.classList.toggle(MONOCHROME_CLASS, isMonochromeImage(image));
-      const baseFilter = style.filter === 'none' ? '' : `${style.filter} `;
-      setVariable(image, '--fd-original-filter', `${baseFilter}invert(1) hue-rotate(180deg) brightness(0.9)`);
-      rememberInternalAttributeState(image);
+      const analysis = analyzeMonochromeImage(image, style.filter);
+      image.toggleAttribute(MONOCHROME_ATTRIBUTE, analysis.monochrome);
+      if (analysis.monochrome) {
+        setVariable(image, '--fd-original-filter', monochromeFilter(image, style, analysis));
+      }
+      adjustedElements.add(image);
+      rememberInternalStyle(image);
     };
     if (image.complete && image.naturalWidth) classify();
     else image.addEventListener('load', classify, { once: true });
@@ -482,15 +520,16 @@
     const prepared = [];
     elements.forEach(element => {
       if (!element.isConnected || element.closest('style, script, link, meta')) return;
-      const wasMonochrome = element.classList.contains(MONOCHROME_CLASS);
-      removeInternalStyles(element);
+      const wasMonochrome = element.hasAttribute(MONOCHROME_ATTRIBUTE);
+      if (element.hasAttribute(ADJUSTED_ATTRIBUTE) || wasMonochrome) removeInternalStyles(element);
       prepared.push({ element, wasMonochrome });
     });
 
     const snapshots = prepared.map(({ element, wasMonochrome }) => {
       const style = snapshotStyle(element);
-      const before = snapshotStyle(element, '::before');
-      const after = snapshotStyle(element, '::after');
+      const inspectPseudos = element.matches('a, button, input, textarea, select, label, [role], [class*="icon" i], [class*="button" i], [class*="badge" i], [class*="menu" i], [class*="tooltip" i]');
+      const before = inspectPseudos ? snapshotStyle(element, '::before') : { content: 'none', display: 'none' };
+      const after = inspectPseudos ? snapshotStyle(element, '::after') : { content: 'none', display: 'none' };
       normalizeInheritedColors(element, style, before, after);
       return { element, wasMonochrome, style, before, after };
     });
@@ -500,13 +539,15 @@
     snapshots.forEach(({ element, wasMonochrome, style, before, after }) => {
       applyStyleSnapshot(element, style);
       applyPseudoStyles(element, before, after);
-      element.classList.add(ADJUSTED_CLASS);
       if (element instanceof HTMLImageElement) {
-        if (wasMonochrome) element.classList.add(MONOCHROME_CLASS);
+        if (wasMonochrome) element.setAttribute(MONOCHROME_ATTRIBUTE, '');
         processImage(element, style);
       }
-      rememberInternalAttributeState(element);
-      adjustedElements.add(element);
+      if (element.style.cssText.includes('--fd-')) {
+        element.setAttribute(ADJUSTED_ATTRIBUTE, '');
+        adjustedElements.add(element);
+      }
+      rememberInternalStyle(element);
     });
   }
 
@@ -514,12 +555,12 @@
     workScheduled = false;
     if (!active) return;
     const batch = [];
-    const maximum = 240;
+    const maximum = 80;
     while (queuedElements.size && batch.length < maximum) {
       const iterator = queuedElements.values().next();
       queuedElements.delete(iterator.value);
       batch.push(iterator.value);
-      if (deadline?.timeRemaining && deadline.timeRemaining() < 2 && batch.length >= 40) break;
+      if (deadline?.timeRemaining && deadline.timeRemaining() < 3 && batch.length >= 20) break;
     }
     if (batch.length) processBatch(batch);
     if (queuedElements.size) scheduleWork();
@@ -528,18 +569,13 @@
   function scheduleWork() {
     if (workScheduled || !active) return;
     workScheduled = true;
-    if (document.visibilityState === 'visible' && performance.now() < urgentUntil) {
-      setTimeout(() => runWork(null), 0);
-    } else if ('requestIdleCallback' in window) requestIdleCallback(runWork, { timeout: 120 });
+    if ('requestIdleCallback' in window) requestIdleCallback(runWork, { timeout: 350 });
     else setTimeout(() => runWork(null), 0);
   }
 
   function requestUrgentRefresh(root = document.documentElement) {
     if (!active || !root) return;
-    urgentUntil = performance.now() + 2000;
-    const hadScheduledWork = workScheduled;
     enqueueRoot(root);
-    if (hadScheduledWork) setTimeout(() => runWork(null), 0);
   }
 
   function enqueueElement(element) {
@@ -564,11 +600,14 @@
         });
       } else {
         if (
-          (mutation.attributeName === 'class' || mutation.attributeName === 'style')
-          && isInternalAttributeMutation(mutation.target)
+          mutation.attributeName === 'style'
+          && internalStyleStates.get(mutation.target) === mutation.target.getAttribute('style')
         ) return;
         if (mutation.target instanceof HTMLImageElement) delete mutation.target.dataset.fdImageSignature;
-        enqueueRoot(mutation.target);
+        enqueueElement(mutation.target);
+        if (mutation.attributeName === 'class') {
+          mutation.target.querySelectorAll?.(':scope > *').forEach(enqueueElement);
+        }
       }
     });
   });
@@ -619,13 +658,15 @@
 
   window.addEventListener('pageshow', () => {
     if (!active) apply();
-    else requestUrgentRefresh();
+    else if (queuedElements.size) scheduleWork();
   });
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       if (!active) apply();
-      else requestUrgentRefresh();
+      else if (queuedElements.size) {
+        scheduleWork();
+      }
     }
   });
 
@@ -633,7 +674,6 @@
     if (!active) return;
     const path = event.composedPath();
     setTimeout(() => {
-      urgentUntil = performance.now() + 500;
       path.forEach(node => {
         if (node instanceof Element) enqueueElement(node);
       });
@@ -641,10 +681,8 @@
     }, 0);
   };
 
-  [
-    'pointerover', 'pointerout', 'focusin', 'focusout',
-    'transitionrun', 'transitionend', 'animationstart', 'animationiteration', 'animationend'
-  ].forEach(type => document.addEventListener(type, refreshInteractionPath, true));
+  ['pointerover', 'pointerout', 'focusin', 'focusout']
+    .forEach(type => document.addEventListener(type, refreshInteractionPath, true));
 
   darkModeQuery.addEventListener('change', apply);
   chrome.storage.sync.get(['enabled', 'siteOverrides'], data => {
