@@ -41,6 +41,7 @@
       border-left-color: var(--fd-border-left) !important;
       outline-color: var(--fd-outline) !important;
       text-decoration-color: var(--fd-decoration) !important;
+      box-shadow: var(--fd-shadow) !important;
       text-shadow: var(--fd-text-shadow) !important;
       background-image: var(--fd-bg-image) !important;
       caret-color: var(--fd-caret) !important;
@@ -51,6 +52,7 @@
       background-color: var(--fd-before-bg) !important;
       color: var(--fd-before-color) !important;
       border-color: var(--fd-before-border) !important;
+      box-shadow: var(--fd-before-shadow) !important;
       text-shadow: var(--fd-before-text-shadow) !important;
       background-image: var(--fd-before-bg-image) !important;
     }
@@ -58,6 +60,7 @@
       background-color: var(--fd-after-bg) !important;
       color: var(--fd-after-color) !important;
       border-color: var(--fd-after-border) !important;
+      box-shadow: var(--fd-after-shadow) !important;
       text-shadow: var(--fd-after-text-shadow) !important;
       background-image: var(--fd-after-bg-image) !important;
     }
@@ -88,6 +91,10 @@
   const observedRoots = new WeakSet();
   const originalStyles = new WeakMap();
   const internalStyleStates = new WeakMap();
+  const backgroundColorCache = new Map();
+  const foregroundColorCache = new Map();
+  const borderColorCache = new Map();
+  const MAX_DARK_SURFACE_LUMINANCE = 0.14;
 
   function parseColor(value) {
     if (!value || value === 'transparent') return null;
@@ -185,6 +192,32 @@
     return relativeLuminance(color) * alpha + backgroundLuminance * (1 - alpha);
   }
 
+  function colorCacheKey(color) {
+    return `${color.r},${color.g},${color.b},${Number(color.a).toFixed(3)}`;
+  }
+
+  function cachedColorTransform(cache, value, transform) {
+    const color = parseColor(value);
+    if (!color || color.a === 0) return null;
+    const key = colorCacheKey(color);
+    if (!cache.has(key)) cache.set(key, transform(color));
+    return cache.get(key);
+  }
+
+  function limitSurfaceLuminance(color) {
+    if (relativeLuminance(color) <= MAX_DARK_SURFACE_LUMINANCE) return color;
+    const hsl = rgbToHsl(color);
+    let lower = 0;
+    let upper = hsl.l;
+    for (let step = 0; step < 12; step++) {
+      const lightness = (lower + upper) / 2;
+      const candidate = parseColor(hslToRgb({ h: hsl.h, s: hsl.s, l: lightness }, color.a));
+      if (candidate && relativeLuminance(candidate) <= MAX_DARK_SURFACE_LUMINANCE) lower = lightness;
+      else upper = lightness;
+    }
+    return parseColor(hslToRgb({ h: hsl.h, s: hsl.s, l: lower }, color.a)) || color;
+  }
+
   function ensureContrast(value, backgroundLuminance, minimumRatio) {
     const color = parseColor(value);
     if (!color || backgroundLuminance === null) return value;
@@ -220,53 +253,47 @@
   }
 
   function transformBackground(value) {
-    const color = parseColor(value);
-    if (!color || color.a === 0) return null;
-    const hsl = rgbToHsl(color);
-    if (hsl.l <= 0.24) return value;
-    if (chroma(color) >= 0.22) {
-      hsl.l = Math.min(0.42, Math.max(0.18, hsl.l > 0.58 ? 0.36 : hsl.l));
-      hsl.s = Math.min(hsl.s, 0.68);
-    } else {
-      hsl.l = 0.10 + (1 - hsl.l) * 0.26;
-      hsl.s = Math.min(0.06, hsl.s * 0.25);
-    }
-    return hslToRgb(hsl, color.a);
+    return cachedColorTransform(backgroundColorCache, value, color => {
+      const hsl = rgbToHsl(color);
+      if (hsl.l > 0.24) {
+        if (chroma(color) >= 0.22) {
+          hsl.l = Math.min(0.36, Math.max(0.18, hsl.l > 0.58 ? 0.32 : hsl.l));
+          hsl.s = Math.min(hsl.s, 0.68);
+        } else {
+          hsl.l = 0.10 + (1 - hsl.l) * 0.26;
+          hsl.s = Math.min(0.06, hsl.s * 0.25);
+        }
+      }
+      const limited = limitSurfaceLuminance(parseColor(hslToRgb(hsl, color.a)) || color);
+      return hslToRgb(rgbToHsl(limited), color.a);
+    });
   }
 
-  function transformForeground(value, backgroundLuminance = null) {
-    const color = parseColor(value);
-    if (!color || color.a === 0) return null;
-    if (
-      backgroundLuminance !== null
-      && contrastRatio(compositedLuminance(color, backgroundLuminance), backgroundLuminance) >= 4.5
-    ) return value;
-    const hsl = rgbToHsl(color);
-    if (chroma(color) >= 0.20) {
-      hsl.l = Math.max(0.64, Math.min(0.82, hsl.l));
-      hsl.s = Math.min(hsl.s, 0.72);
-    } else {
-      hsl.l = 0.82 + (0.62 - hsl.l) * 0.10;
-      hsl.s = Math.min(0.05, hsl.s * 0.25);
-    }
-    return ensureContrast(hslToRgb(hsl, color.a), backgroundLuminance, 4.5);
+  function transformForeground(value) {
+    return cachedColorTransform(foregroundColorCache, value, color => {
+      const hsl = rgbToHsl(color);
+      if (chroma(color) >= 0.20) {
+        hsl.l = Math.max(0.64, Math.min(0.82, hsl.l));
+        hsl.s = Math.min(hsl.s, 0.72);
+      } else {
+        hsl.l = 0.82 + (0.62 - hsl.l) * 0.10;
+        hsl.s = Math.min(0.05, hsl.s * 0.25);
+      }
+      return ensureContrast(hslToRgb(hsl, color.a), MAX_DARK_SURFACE_LUMINANCE, 4.5);
+    });
   }
 
-  function transformBorder(value, backgroundLuminance = null) {
-    const color = parseColor(value);
-    if (!color || color.a === 0) return null;
-    if (
-      backgroundLuminance !== null
-      && contrastRatio(compositedLuminance(color, backgroundLuminance), backgroundLuminance) >= 3
-    ) return value;
-    const hsl = rgbToHsl(color);
-    if (chroma(color) >= 0.20) {
-      hsl.l = Math.max(0.38, Math.min(0.58, hsl.l));
-    } else {
-      hsl.l = Math.max(0.24, Math.min(0.36, hsl.l));
-      hsl.s = Math.min(0.04, hsl.s * 0.2);
-    }
-    return ensureContrast(hslToRgb(hsl, color.a), backgroundLuminance, 3);
+  function transformBorder(value) {
+    return cachedColorTransform(borderColorCache, value, color => {
+      const hsl = rgbToHsl(color);
+      if (chroma(color) >= 0.20) {
+        hsl.l = Math.max(0.38, Math.min(0.58, hsl.l));
+      } else {
+        hsl.l = Math.max(0.24, Math.min(0.36, hsl.l));
+        hsl.s = Math.min(0.04, hsl.s * 0.2);
+      }
+      return ensureContrast(hslToRgb(hsl, color.a), MAX_DARK_SURFACE_LUMINANCE, 3);
+    });
   }
 
   function rewriteColors(value, transform) {
@@ -279,17 +306,6 @@
       return replacement;
     });
     return changed ? rewritten : null;
-  }
-
-  function shadowNeedsColorFreeze(shadow, colorValue) {
-    const color = parseColor(colorValue);
-    return Boolean(
-      shadow
-      && shadow !== 'none'
-      && color
-      && relativeLuminance(color) < 0.25
-      && shadow.includes(colorValue)
-    );
   }
 
   function getVisibleBackgroundLuminance(element) {
@@ -391,8 +407,8 @@
   function replaceSnapshotColorReferences(style, from, to) {
     [
       'color', 'borderTopColor', 'borderRightColor', 'borderBottomColor',
-      'borderLeftColor', 'outlineColor', 'textDecorationColor', 'boxShadow',
-      'textShadow', 'fill', 'stroke', 'caretColor', 'columnRuleColor'
+      'borderLeftColor', 'outlineColor', 'textDecorationColor', 'fill', 'stroke',
+      'caretColor', 'columnRuleColor'
     ].forEach(property => {
       style[property] = replaceResolvedColor(style[property], from, to);
     });
@@ -425,9 +441,8 @@
   }
 
   function applyStyleSnapshot(element, style) {
-    const backgroundLuminance = getFinalBackgroundLuminance(element);
-    const transformLocalForeground = value => transformForeground(value, backgroundLuminance);
-    const transformLocalBorder = value => transformBorder(value, backgroundLuminance);
+    const transformLocalForeground = value => transformForeground(value);
+    const transformLocalBorder = value => transformBorder(value);
     setChangedVariable(element, '--fd-bg', style.backgroundColor, transformBackground(style.backgroundColor));
     setChangedVariable(element, '--fd-color', style.color, transformLocalForeground(style.color));
     if (style.borderTopStyle !== 'none') setChangedVariable(element, '--fd-border-top', style.borderTopColor, transformLocalBorder(style.borderTopColor));
@@ -436,9 +451,8 @@
     if (style.borderLeftStyle !== 'none') setChangedVariable(element, '--fd-border-left', style.borderLeftColor, transformLocalBorder(style.borderLeftColor));
     if (style.outlineStyle !== 'none') setChangedVariable(element, '--fd-outline', style.outlineColor, transformLocalBorder(style.outlineColor));
     if (style.textDecorationLine !== 'none') setChangedVariable(element, '--fd-decoration', style.textDecorationColor, transformLocalForeground(style.textDecorationColor));
-    if (shadowNeedsColorFreeze(style.textShadow, style.color)) {
-      setVariable(element, '--fd-text-shadow', style.textShadow);
-    }
+    if (style.boxShadow !== 'none') setVariable(element, '--fd-shadow', style.boxShadow);
+    if (style.textShadow !== 'none') setVariable(element, '--fd-text-shadow', style.textShadow);
     setChangedVariable(element, '--fd-bg-image', style.backgroundImage, rewriteColors(style.backgroundImage, transformBackground));
     if (element.matches('input, textarea, [contenteditable="true"]')) {
       setChangedVariable(element, '--fd-caret', style.caretColor, transformLocalForeground(style.caretColor));
@@ -457,15 +471,13 @@
 
   function applyPseudoStyle(element, prefix, style) {
     if (style.content === 'none' || style.display === 'none') return;
-    const backgroundLuminance = getFinalBackgroundLuminance(element);
-    const transformLocalForeground = value => transformForeground(value, backgroundLuminance);
-    const transformLocalBorder = value => transformBorder(value, backgroundLuminance);
+    const transformLocalForeground = value => transformForeground(value);
+    const transformLocalBorder = value => transformBorder(value);
     setChangedVariable(element, `--fd-${prefix}-bg`, style.backgroundColor, transformBackground(style.backgroundColor));
     setChangedVariable(element, `--fd-${prefix}-color`, style.color, transformLocalForeground(style.color));
     if (style.borderTopStyle !== 'none') setChangedVariable(element, `--fd-${prefix}-border`, style.borderTopColor, transformLocalBorder(style.borderTopColor));
-    if (shadowNeedsColorFreeze(style.textShadow, style.color)) {
-      setVariable(element, `--fd-${prefix}-text-shadow`, style.textShadow);
-    }
+    if (style.boxShadow !== 'none') setVariable(element, `--fd-${prefix}-shadow`, style.boxShadow);
+    if (style.textShadow !== 'none') setVariable(element, `--fd-${prefix}-text-shadow`, style.textShadow);
     setChangedVariable(element, `--fd-${prefix}-bg-image`, style.backgroundImage, rewriteColors(style.backgroundImage, transformBackground));
   }
 

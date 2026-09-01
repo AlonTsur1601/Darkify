@@ -18,6 +18,7 @@ html.__force-dark-active__ [data-fd-adjusted] {
   border-left-color: var(--fd-border-left) !important;
   outline-color: var(--fd-outline) !important;
   text-decoration-color: var(--fd-decoration) !important;
+  box-shadow: var(--fd-shadow) !important;
   text-shadow: var(--fd-text-shadow) !important;
   background-image: var(--fd-bg-image) !important;
   caret-color: var(--fd-caret) !important;
@@ -29,6 +30,7 @@ html.__force-dark-active__ [data-fd-adjusted]::before {
   background-color: var(--fd-before-bg) !important;
   color: var(--fd-before-color) !important;
   border-color: var(--fd-before-border) !important;
+  box-shadow: var(--fd-before-shadow) !important;
   text-shadow: var(--fd-before-text-shadow) !important;
   background-image: var(--fd-before-bg-image) !important;
 }
@@ -37,6 +39,7 @@ html.__force-dark-active__ [data-fd-adjusted]::after {
   background-color: var(--fd-after-bg) !important;
   color: var(--fd-after-color) !important;
   border-color: var(--fd-after-border) !important;
+  box-shadow: var(--fd-after-shadow) !important;
   text-shadow: var(--fd-after-text-shadow) !important;
   background-image: var(--fd-after-bg-image) !important;
 }

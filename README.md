@@ -6,16 +6,30 @@ look dark alone and supports a manual per-site override.
 
 ## Install from GitHub
 
-1. Download the latest source ZIP from **Code → Download ZIP** (or download a
-   packaged ZIP from the GitHub Releases page when one is available).
-2. Extract the ZIP to a permanent folder.
-3. Open `chrome://extensions` in Chrome.
-4. Enable **Developer mode**.
-5. Select **Load unpacked** and choose the folder that contains `manifest.json`.
+1. On this repository page, select **Code → Download ZIP**. You can also
+   download the newest `Darkify-v*.zip` from the GitHub Releases page.
+2. Extract the downloaded ZIP to a permanent folder. Do not select the ZIP
+   itself in Chrome and do not delete the extracted folder after installation.
+3. Open a new Chrome tab and enter `chrome://extensions` in the address bar.
+4. Turn on **Developer mode** using the switch in the upper-right corner of the
+   Extensions page.
+5. Select **Load unpacked** in the upper-left corner.
+6. In the folder picker, choose the extracted folder that directly contains
+   `manifest.json`, `content.js` and `background.js`.
+7. Confirm that the **Darkify** card appears and that its version matches the
+   latest release. Darkify now runs automatically on eligible websites when
+   the operating system prefers dark mode.
+
+You can pin Darkify from Chrome's puzzle-piece menu to quickly enable or
+disable it globally or set an override for the current website.
+
+### Updating an unpacked installation
 
 Chrome does not automatically update unpacked extensions. Download a newer
 release and replace the extracted files when you want to update Darkify, then
-click **Reload** on its card in `chrome://extensions`.
+open `chrome://extensions` and click **Reload** on the Darkify card. Existing
+tabs running an older Darkify version are refreshed once so that an old content
+script cannot remain active alongside the new one.
 
 ## How it works
 
