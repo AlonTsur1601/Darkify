@@ -16,6 +16,7 @@
   const PROPERTIES_ATTRIBUTE = 'data-fd-props';
   const LEGACY_ADJUSTED_ATTRIBUTE = 'data-fd-adjusted';
   const MONOCHROME_ATTRIBUTE = 'data-fd-monochrome';
+  const SAMPLING_ATTRIBUTE = 'data-fd-sampling';
   const PRESERVED_MEDIA_SELECTOR = 'img, picture, video, canvas, iframe, object, embed';
   const host = location.hostname;
   const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -62,6 +63,7 @@
     :host-context(html.__force-dark-active__) [data-fd-props~="after-shadow"]::after { box-shadow: var(--fd-after-shadow) !important; }
     :host-context(html.__force-dark-active__) [data-fd-props~="after-text-shadow"]::after { text-shadow: var(--fd-after-text-shadow) !important; }
     :host-context(html.__force-dark-active__) [data-fd-props~="after-bg-image"]::after { background-image: var(--fd-after-bg-image) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-sampling] { transition: none !important; }
     :host-context(html.__force-dark-active__) img[data-fd-monochrome] {
       filter: var(--fd-original-filter) !important;
     }
@@ -84,6 +86,8 @@
   const queuedTraversalRoots = new WeakSet();
   const pendingAttributeRefreshes = new Map();
   const pendingInteractionElements = new Set();
+  const cacheableTraversalElements = new WeakSet();
+  const traversalSnapshotCache = new Map();
   let interactionRefreshTimer = null;
   const adjustedElements = new Set();
   const observedRoots = new WeakSet();
@@ -337,6 +341,7 @@
     element.removeAttribute(PROPERTIES_ATTRIBUTE);
     element.removeAttribute(LEGACY_ADJUSTED_ATTRIBUTE);
     element.removeAttribute(MONOCHROME_ATTRIBUTE);
+    element.removeAttribute(SAMPLING_ATTRIBUTE);
     INTERNAL_PROPERTIES.forEach(property => element.style.removeProperty(property));
   }
 
@@ -393,6 +398,60 @@
       filter: style.filter,
       content: style.content,
       display: style.display
+    };
+  }
+
+  function styleContextPart(element) {
+    if (!element) return '';
+    const stateAttributes = [];
+    for (const attribute of element.attributes) {
+      if (
+        attribute.name === 'role'
+        || attribute.name === 'type'
+        || ['color', 'bgcolor', 'fill', 'stroke'].includes(attribute.name)
+        || attribute.name.startsWith('aria-')
+        || /^data-(state|variant|theme|color|status|selected|active|open)$/i.test(attribute.name)
+      ) stateAttributes.push(`${attribute.name}=${attribute.value}`);
+    }
+    const className = typeof element.className === 'string'
+      ? element.className
+      : element.getAttribute('class') || '';
+    return `${element.tagName}.${className}#${element.id || ''}[${stateAttributes.join('|')}]`;
+  }
+
+  function siblingPhase(element) {
+    let phase = 1;
+    let sibling = element.previousElementSibling;
+    while (sibling && phase < 12) {
+      phase++;
+      sibling = sibling.previousElementSibling;
+    }
+    return phase === 12 && sibling ? 0 : phase;
+  }
+
+  function traversalSnapshotKey(element, inspectPseudos) {
+    if (
+      element.getRootNode() instanceof ShadowRoot
+      || element.matches(':hover, :focus, :focus-within, :active')
+    ) return null;
+    const contexts = [];
+    let current = element;
+    for (let depth = 0; current && depth < 4; depth++, current = current.parentElement) {
+      contexts.push(styleContextPart(current));
+    }
+    return [
+      contexts.join('>'),
+      `phase:${siblingPhase(element)}`,
+      `pseudo:${inspectPseudos ? 1 : 0}`,
+      `style:${element.getAttribute('style') || ''}`
+    ].join('||');
+  }
+
+  function cloneSnapshot(snapshot) {
+    return {
+      style: { ...snapshot.style },
+      before: { ...snapshot.before },
+      after: { ...snapshot.after }
     };
   }
 
@@ -598,6 +657,11 @@
       }
       if (element.closest('style, script, link, meta')) return;
       const wasMonochrome = element.hasAttribute(MONOCHROME_ATTRIBUTE);
+      const hadAdjustments = Boolean(
+        element.hasAttribute(PROPERTIES_ATTRIBUTE)
+        || element.hasAttribute(LEGACY_ADJUSTED_ATTRIBUTE)
+        || wasMonochrome
+      );
       const preserveImageState = Boolean(
         element instanceof HTMLImageElement
         && wasMonochrome
@@ -607,24 +671,35 @@
       );
       if (
         !preserveImageState
-        && (
-          element.hasAttribute(PROPERTIES_ATTRIBUTE)
-          || element.hasAttribute(LEGACY_ADJUSTED_ATTRIBUTE)
-          || wasMonochrome
-        )
-      ) removeInternalStyles(element);
-      prepared.push({ element, wasMonochrome, preserveImageState });
+        && hadAdjustments
+      ) {
+        element.setAttribute(SAMPLING_ATTRIBUTE, '');
+        removeInternalStyles(element);
+        element.setAttribute(SAMPLING_ATTRIBUTE, '');
+      }
+      prepared.push({ element, wasMonochrome, preserveImageState, sampling: hadAdjustments && !preserveImageState });
     });
 
-    const snapshots = prepared.map(({ element, wasMonochrome, preserveImageState }) => {
-      const style = preserveImageState && originalStyles.has(element)
-        ? originalStyles.get(element)
-        : snapshotStyle(element);
+    const snapshots = prepared.map(({ element, wasMonochrome, preserveImageState, sampling }) => {
+      const cacheable = cacheableTraversalElements.has(element);
+      cacheableTraversalElements.delete(element);
       const inspectPseudos = !element.matches(PRESERVED_MEDIA_SELECTOR)
         && element.matches('a, button, input, textarea, select, label, [role], [class*="icon" i], [class*="button" i], [class*="badge" i], [class*="menu" i], [class*="tooltip" i]');
-      const before = inspectPseudos ? snapshotStyle(element, '::before') : { content: 'none', display: 'none' };
-      const after = inspectPseudos ? snapshotStyle(element, '::after') : { content: 'none', display: 'none' };
-      return { element, wasMonochrome, style, before, after };
+      const cacheKey = cacheable && !preserveImageState && !element.matches(PRESERVED_MEDIA_SELECTOR)
+        ? traversalSnapshotKey(element, inspectPseudos)
+        : null;
+      let cached = cacheKey ? traversalSnapshotCache.get(cacheKey) : null;
+      if (!cached) {
+        const style = preserveImageState && originalStyles.has(element)
+          ? originalStyles.get(element)
+          : snapshotStyle(element);
+        const before = inspectPseudos ? snapshotStyle(element, '::before') : { content: 'none', display: 'none' };
+        const after = inspectPseudos ? snapshotStyle(element, '::after') : { content: 'none', display: 'none' };
+        cached = { style, before, after };
+        if (cacheKey) traversalSnapshotCache.set(cacheKey, cloneSnapshot(cached));
+      }
+      const { style, before, after } = cloneSnapshot(cached);
+      return { element, wasMonochrome, style, before, after, sampling };
     });
 
     const snapshotByElement = new Map(snapshots.map(snapshot => [snapshot.element, snapshot.style]));
@@ -649,7 +724,8 @@
       );
     });
 
-    snapshots.forEach(({ element, wasMonochrome, style, before, after, inheritedColor }) => {
+    const samplingElements = [];
+    snapshots.forEach(({ element, wasMonochrome, style, before, after, inheritedColor, sampling }) => {
       if (element instanceof HTMLImageElement) {
         if (wasMonochrome) element.setAttribute(MONOCHROME_ATTRIBUTE, '');
         processImage(element, style);
@@ -658,8 +734,18 @@
         applyPseudoStyles(element, style, before, after);
         syncPropertyTokens(element);
       }
-      rememberInternalStyle(element);
+      if (sampling) samplingElements.push(element);
+      else rememberInternalStyle(element);
     });
+    if (samplingElements.length) {
+      // Commit the dark target while transitions are disabled. Re-enabling a
+      // transition before this flush can animate from the site's light color.
+      getComputedStyle(samplingElements[0]).color;
+      samplingElements.forEach(element => {
+        element.removeAttribute(SAMPLING_ATTRIBUTE);
+        rememberInternalStyle(element);
+      });
+    }
   }
 
   function runWork(deadline) {
@@ -683,6 +769,7 @@
           continue;
         }
         if (element.shadowRoot) enqueueRoot(element.shadowRoot);
+        cacheableTraversalElements.add(element);
         batch.push(element);
       }
       if (deadline?.timeRemaining && deadline.timeRemaining() < 4 && batch.length >= 12) break;
@@ -694,8 +781,16 @@
   function scheduleWork() {
     if (workScheduled || !active) return;
     workScheduled = true;
-    if ('requestIdleCallback' in window) requestIdleCallback(runWork, { timeout: 350 });
-    else setTimeout(() => runWork(null), 0);
+    if (globalThis.scheduler?.postTask) {
+      globalThis.scheduler.postTask(() => runWork(null), { priority: 'background' }).catch(() => {
+        workScheduled = false;
+        if (active) setTimeout(() => runWork(null), 0);
+      });
+    } else if ('requestIdleCallback' in window) {
+      requestIdleCallback(runWork, { timeout: 250 });
+    } else {
+      setTimeout(() => runWork(null), 0);
+    }
   }
 
   function requestUrgentRefresh(root = document.documentElement) {
@@ -725,7 +820,7 @@
     scheduleWork();
   }
 
-  function scheduleElementRefresh(element, includeChildren = false, delay = 90) {
+  function scheduleElementRefresh(element, includeChildren = false, delay = 140) {
     if (!(element instanceof Element)) return;
     const previous = pendingAttributeRefreshes.get(element);
     if (previous) clearTimeout(previous);
@@ -749,6 +844,10 @@
     if (!active) return;
     mutations.forEach(mutation => {
       if (mutation.type === 'childList') {
+        if (
+          [...mutation.addedNodes, ...mutation.removedNodes]
+            .some(node => node.nodeType === 1 && node.matches?.('style, link[rel="stylesheet"]'))
+        ) traversalSnapshotCache.clear();
         mutation.addedNodes.forEach(node => {
           if (node.nodeType === 1) enqueueRoot(node);
         });
@@ -760,6 +859,11 @@
           mutation.attributeName === 'style'
           && internalStyleStates.get(mutation.target) === mutation.target.getAttribute('style')
         ) return;
+        traversalSnapshotCache.clear();
+        if (
+          mutation.target.hasAttribute(PROPERTIES_ATTRIBUTE)
+          || mutation.target.hasAttribute(MONOCHROME_ATTRIBUTE)
+        ) mutation.target.setAttribute(SAMPLING_ATTRIBUTE, '');
         if (mutation.target instanceof HTMLImageElement) delete mutation.target.dataset.fdImageSignature;
         scheduleElementRefresh(
           mutation.target,
@@ -797,6 +901,7 @@
     pendingAttributeRefreshes.forEach(clearTimeout);
     pendingAttributeRefreshes.clear();
     pendingInteractionElements.clear();
+    traversalSnapshotCache.clear();
     if (interactionRefreshTimer) clearTimeout(interactionRefreshTimer);
     interactionRefreshTimer = null;
     adjustedElements.forEach(element => {
@@ -845,7 +950,13 @@
   const refreshInteractionPath = event => {
     if (!active) return;
     event.composedPath().slice(0, 4).forEach(node => {
-      if (node instanceof Element) pendingInteractionElements.add(node);
+      if (node instanceof Element) {
+        pendingInteractionElements.add(node);
+        if (
+          node.hasAttribute(PROPERTIES_ATTRIBUTE)
+          || node.hasAttribute(MONOCHROME_ATTRIBUTE)
+        ) node.setAttribute(SAMPLING_ATTRIBUTE, '');
+      }
     });
     if (interactionRefreshTimer) clearTimeout(interactionRefreshTimer);
     interactionRefreshTimer = setTimeout(() => {
@@ -858,11 +969,6 @@
 
   ['pointerover', 'pointerout', 'focusin', 'focusout']
     .forEach(type => document.addEventListener(type, refreshInteractionPath, true));
-
-  ['transitionend', 'transitioncancel', 'animationend', 'animationcancel']
-    .forEach(type => document.addEventListener(type, event => {
-      scheduleElementRefresh(event.target, false, 40);
-    }, true));
 
   darkModeQuery.addEventListener('change', apply);
   chrome.storage.sync.get(['enabled', 'siteOverrides'], data => {

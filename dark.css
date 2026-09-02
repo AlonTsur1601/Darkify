@@ -40,6 +40,9 @@ html.__force-dark-active__ [data-fd-props~="after-shadow"]::after { box-shadow: 
 html.__force-dark-active__ [data-fd-props~="after-text-shadow"]::after { text-shadow: var(--fd-after-text-shadow) !important; }
 html.__force-dark-active__ [data-fd-props~="after-bg-image"]::after { background-image: var(--fd-after-bg-image) !important; }
 
+/* Read dynamic target colors without freezing an in-progress transition. */
+html.__force-dark-active__ [data-fd-sampling] { transition: none !important; }
+
 /* Only confidently detected neutral image assets receive one inversion.
    Color images and grayscale photographs remain entirely untouched. */
 html.__force-dark-active__ img[data-fd-monochrome] {
