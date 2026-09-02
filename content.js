@@ -80,6 +80,11 @@
   let active = false;
   let workScheduled = false;
   const queuedElements = new Set();
+  const pendingTraversals = [];
+  const queuedTraversalRoots = new WeakSet();
+  const pendingAttributeRefreshes = new Map();
+  const pendingInteractionElements = new Set();
+  let interactionRefreshTimer = null;
   const adjustedElements = new Set();
   const observedRoots = new WeakSet();
   const originalStyles = new WeakMap();
@@ -406,11 +411,10 @@
     });
   }
 
-  function normalizeInheritedColors(element, style, before, after) {
+  function normalizeInheritedColors(element, style, before, after, inheritedCurrent) {
     const parent = element.parentElement;
     const parentOriginal = parent ? originalStyles.get(parent) : null;
     if (!parent || !parentOriginal) return false;
-    const inheritedCurrent = getComputedStyle(parent).color;
     if (style.color !== inheritedCurrent) return false;
     const resolvedColor = style.color;
     replaceSnapshotColorReferences(style, resolvedColor, parentOriginal.color);
@@ -585,7 +589,14 @@
   function processBatch(elements) {
     const prepared = [];
     elements.forEach(element => {
-      if (!element.isConnected || element.closest('style, script, link, meta')) return;
+      if (!element.isConnected) {
+        adjustedElements.delete(element);
+        const pendingRefresh = pendingAttributeRefreshes.get(element);
+        if (pendingRefresh) clearTimeout(pendingRefresh);
+        pendingAttributeRefreshes.delete(element);
+        return;
+      }
+      if (element.closest('style, script, link, meta')) return;
       const wasMonochrome = element.hasAttribute(MONOCHROME_ATTRIBUTE);
       const preserveImageState = Boolean(
         element instanceof HTMLImageElement
@@ -609,19 +620,32 @@
       const style = preserveImageState && originalStyles.has(element)
         ? originalStyles.get(element)
         : snapshotStyle(element);
-      const inspectPseudos = element.matches('a, button, input, textarea, select, label, [role], [class*="icon" i], [class*="button" i], [class*="badge" i], [class*="menu" i], [class*="tooltip" i]');
+      const inspectPseudos = !element.matches(PRESERVED_MEDIA_SELECTOR)
+        && element.matches('a, button, input, textarea, select, label, [role], [class*="icon" i], [class*="button" i], [class*="badge" i], [class*="menu" i], [class*="tooltip" i]');
       const before = inspectPseudos ? snapshotStyle(element, '::before') : { content: 'none', display: 'none' };
       const after = inspectPseudos ? snapshotStyle(element, '::after') : { content: 'none', display: 'none' };
       return { element, wasMonochrome, style, before, after };
     });
 
+    const snapshotByElement = new Map(snapshots.map(snapshot => [snapshot.element, snapshot.style]));
+    const parentColorCache = new Map();
     snapshots.forEach(({ element, style }) => originalStyles.set(element, style));
     snapshots.forEach(snapshot => {
+      const parent = snapshot.element.parentElement;
+      let parentCurrentColor = null;
+      if (parent) {
+        parentCurrentColor = snapshotByElement.get(parent)?.color;
+        if (!parentCurrentColor) {
+          if (!parentColorCache.has(parent)) parentColorCache.set(parent, getComputedStyle(parent).color);
+          parentCurrentColor = parentColorCache.get(parent);
+        }
+      }
       snapshot.inheritedColor = normalizeInheritedColors(
         snapshot.element,
         snapshot.style,
         snapshot.before,
-        snapshot.after
+        snapshot.after,
+        parentCurrentColor
       );
     });
 
@@ -642,15 +666,29 @@
     workScheduled = false;
     if (!active) return;
     const batch = [];
-    const maximum = 80;
-    while (queuedElements.size && batch.length < maximum) {
-      const iterator = queuedElements.values().next();
-      queuedElements.delete(iterator.value);
-      batch.push(iterator.value);
-      if (deadline?.timeRemaining && deadline.timeRemaining() < 3 && batch.length >= 20) break;
+    const maximum = 36;
+    let directElements = 0;
+    while ((queuedElements.size || pendingTraversals.length) && batch.length < maximum) {
+      if (queuedElements.size && (!pendingTraversals.length || directElements < 24)) {
+        const iterator = queuedElements.values().next();
+        queuedElements.delete(iterator.value);
+        batch.push(iterator.value);
+        directElements++;
+      } else {
+        const traversal = pendingTraversals[0];
+        const element = traversal.walker.nextNode();
+        if (!element) {
+          pendingTraversals.shift();
+          queuedTraversalRoots.delete(traversal.root);
+          continue;
+        }
+        if (element.shadowRoot) enqueueRoot(element.shadowRoot);
+        batch.push(element);
+      }
+      if (deadline?.timeRemaining && deadline.timeRemaining() < 4 && batch.length >= 12) break;
     }
     if (batch.length) processBatch(batch);
-    if (queuedElements.size) scheduleWork();
+    if (queuedElements.size || pendingTraversals.length) scheduleWork();
   }
 
   function scheduleWork() {
@@ -673,9 +711,38 @@
 
   function enqueueRoot(root) {
     if (root instanceof Element) enqueueElement(root);
-    root.querySelectorAll?.('*').forEach(enqueueElement);
     if (root instanceof ShadowRoot) observeRoot(root);
+    if (
+      root?.ownerDocument?.createTreeWalker
+      && !queuedTraversalRoots.has(root)
+    ) {
+      queuedTraversalRoots.add(root);
+      pendingTraversals.push({
+        root,
+        walker: root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_ELEMENT)
+      });
+    }
     scheduleWork();
+  }
+
+  function scheduleElementRefresh(element, includeChildren = false, delay = 90) {
+    if (!(element instanceof Element)) return;
+    const previous = pendingAttributeRefreshes.get(element);
+    if (previous) clearTimeout(previous);
+    const timer = setTimeout(() => {
+      pendingAttributeRefreshes.delete(element);
+      if (!active || !element.isConnected) return;
+      enqueueElement(element);
+      if (includeChildren) {
+        if (element.children.length <= 24) {
+          for (const child of element.children) enqueueElement(child);
+        } else {
+          enqueueRoot(element);
+        }
+      }
+      scheduleWork();
+    }, delay);
+    pendingAttributeRefreshes.set(element, timer);
   }
 
   const observer = new MutationObserver(mutations => {
@@ -685,16 +752,19 @@
         mutation.addedNodes.forEach(node => {
           if (node.nodeType === 1) enqueueRoot(node);
         });
+        mutation.removedNodes.forEach(node => {
+          if (node.nodeType === 1) enqueueRoot(node);
+        });
       } else {
         if (
           mutation.attributeName === 'style'
           && internalStyleStates.get(mutation.target) === mutation.target.getAttribute('style')
         ) return;
         if (mutation.target instanceof HTMLImageElement) delete mutation.target.dataset.fdImageSignature;
-        enqueueElement(mutation.target);
-        if (mutation.attributeName === 'class') {
-          mutation.target.querySelectorAll?.(':scope > *').forEach(enqueueElement);
-        }
+        scheduleElementRefresh(
+          mutation.target,
+          ['class', 'style', 'color', 'fill', 'stroke'].includes(mutation.attributeName)
+        );
       }
     });
   });
@@ -721,6 +791,14 @@
 
   function clearAllAdjustments() {
     queuedElements.clear();
+    while (pendingTraversals.length) {
+      queuedTraversalRoots.delete(pendingTraversals.pop().root);
+    }
+    pendingAttributeRefreshes.forEach(clearTimeout);
+    pendingAttributeRefreshes.clear();
+    pendingInteractionElements.clear();
+    if (interactionRefreshTimer) clearTimeout(interactionRefreshTimer);
+    interactionRefreshTimer = null;
     adjustedElements.forEach(element => {
       if (!element.isConnected) return;
       removeInternalStyles(element);
@@ -752,13 +830,13 @@
 
   window.addEventListener('pageshow', () => {
     if (!active) apply();
-    else if (queuedElements.size) scheduleWork();
+    else if (queuedElements.size || pendingTraversals.length) scheduleWork();
   });
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       if (!active) apply();
-      else if (queuedElements.size) {
+      else if (queuedElements.size || pendingTraversals.length) {
         scheduleWork();
       }
     }
@@ -766,17 +844,25 @@
 
   const refreshInteractionPath = event => {
     if (!active) return;
-    const path = event.composedPath();
-    setTimeout(() => {
-      path.forEach(node => {
-        if (node instanceof Element) enqueueElement(node);
-      });
+    event.composedPath().slice(0, 4).forEach(node => {
+      if (node instanceof Element) pendingInteractionElements.add(node);
+    });
+    if (interactionRefreshTimer) clearTimeout(interactionRefreshTimer);
+    interactionRefreshTimer = setTimeout(() => {
+      interactionRefreshTimer = null;
+      pendingInteractionElements.forEach(enqueueElement);
+      pendingInteractionElements.clear();
       scheduleWork();
-    }, 0);
+    }, 90);
   };
 
   ['pointerover', 'pointerout', 'focusin', 'focusout']
     .forEach(type => document.addEventListener(type, refreshInteractionPath, true));
+
+  ['transitionend', 'transitioncancel', 'animationend', 'animationcancel']
+    .forEach(type => document.addEventListener(type, event => {
+      scheduleElementRefresh(event.target, false, 40);
+    }, true));
 
   darkModeQuery.addEventListener('change', apply);
   chrome.storage.sync.get(['enabled', 'siteOverrides'], data => {
