@@ -13,8 +13,10 @@
 
   const ACTIVE_CLASS = '__force-dark-active__';
   const VERSION_ATTRIBUTE = 'data-fd-version';
-  const ADJUSTED_ATTRIBUTE = 'data-fd-adjusted';
+  const PROPERTIES_ATTRIBUTE = 'data-fd-props';
+  const LEGACY_ADJUSTED_ATTRIBUTE = 'data-fd-adjusted';
   const MONOCHROME_ATTRIBUTE = 'data-fd-monochrome';
+  const PRESERVED_MEDIA_SELECTOR = 'img, picture, video, canvas, iframe, object, embed';
   const host = location.hostname;
   const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -32,43 +34,34 @@
 
   const SHADOW_STYLE_ATTRIBUTE = 'data-fd-shadow-styles';
   const SHADOW_STYLE_TEXT = `
-    :host-context(html.__force-dark-active__) [data-fd-adjusted] {
-      background-color: var(--fd-bg) !important;
-      color: var(--fd-color) !important;
-      border-top-color: var(--fd-border-top) !important;
-      border-right-color: var(--fd-border-right) !important;
-      border-bottom-color: var(--fd-border-bottom) !important;
-      border-left-color: var(--fd-border-left) !important;
-      outline-color: var(--fd-outline) !important;
-      text-decoration-color: var(--fd-decoration) !important;
-      box-shadow: var(--fd-shadow) !important;
-      text-shadow: var(--fd-text-shadow) !important;
-      background-image: var(--fd-bg-image) !important;
-      caret-color: var(--fd-caret) !important;
-      column-rule-color: var(--fd-column-rule) !important;
-      accent-color: var(--fd-accent) !important;
-    }
-    :host-context(html.__force-dark-active__) [data-fd-adjusted]::before {
-      background-color: var(--fd-before-bg) !important;
-      color: var(--fd-before-color) !important;
-      border-color: var(--fd-before-border) !important;
-      box-shadow: var(--fd-before-shadow) !important;
-      text-shadow: var(--fd-before-text-shadow) !important;
-      background-image: var(--fd-before-bg-image) !important;
-    }
-    :host-context(html.__force-dark-active__) [data-fd-adjusted]::after {
-      background-color: var(--fd-after-bg) !important;
-      color: var(--fd-after-color) !important;
-      border-color: var(--fd-after-border) !important;
-      box-shadow: var(--fd-after-shadow) !important;
-      text-shadow: var(--fd-after-text-shadow) !important;
-      background-image: var(--fd-after-bg-image) !important;
-    }
-    :host-context(html.__force-dark-active__) svg[data-fd-adjusted],
-    :host-context(html.__force-dark-active__) svg [data-fd-adjusted] {
-      fill: var(--fd-fill) !important;
-      stroke: var(--fd-stroke) !important;
-    }
+    :host-context(html.__force-dark-active__) [data-fd-props~="bg"] { background-color: var(--fd-bg) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="color"] { color: var(--fd-color) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="border-top"] { border-top-color: var(--fd-border-top) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="border-right"] { border-right-color: var(--fd-border-right) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="border-bottom"] { border-bottom-color: var(--fd-border-bottom) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="border-left"] { border-left-color: var(--fd-border-left) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="outline"] { outline-color: var(--fd-outline) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="decoration"] { text-decoration-color: var(--fd-decoration) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="shadow"] { box-shadow: var(--fd-shadow) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="text-shadow"] { text-shadow: var(--fd-text-shadow) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="bg-image"] { background-image: var(--fd-bg-image) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="caret"] { caret-color: var(--fd-caret) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="column-rule"] { column-rule-color: var(--fd-column-rule) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="accent"] { accent-color: var(--fd-accent) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="fill"] { fill: var(--fd-fill) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="stroke"] { stroke: var(--fd-stroke) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="before-bg"]::before { background-color: var(--fd-before-bg) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="before-color"]::before { color: var(--fd-before-color) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="before-border"]::before { border-color: var(--fd-before-border) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="before-shadow"]::before { box-shadow: var(--fd-before-shadow) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="before-text-shadow"]::before { text-shadow: var(--fd-before-text-shadow) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="before-bg-image"]::before { background-image: var(--fd-before-bg-image) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="after-bg"]::after { background-color: var(--fd-after-bg) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="after-color"]::after { color: var(--fd-after-color) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="after-border"]::after { border-color: var(--fd-after-border) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="after-shadow"]::after { box-shadow: var(--fd-after-shadow) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="after-text-shadow"]::after { text-shadow: var(--fd-after-text-shadow) !important; }
+    :host-context(html.__force-dark-active__) [data-fd-props~="after-bg-image"]::after { background-image: var(--fd-after-bg-image) !important; }
     :host-context(html.__force-dark-active__) img[data-fd-monochrome] {
       filter: var(--fd-original-filter) !important;
     }
@@ -256,13 +249,8 @@
     return cachedColorTransform(backgroundColorCache, value, color => {
       const hsl = rgbToHsl(color);
       if (hsl.l > 0.24) {
-        if (chroma(color) >= 0.22) {
-          hsl.l = Math.min(0.36, Math.max(0.18, hsl.l > 0.58 ? 0.32 : hsl.l));
-          hsl.s = Math.min(hsl.s, 0.68);
-        } else {
-          hsl.l = 0.10 + (1 - hsl.l) * 0.26;
-          hsl.s = Math.min(0.06, hsl.s * 0.25);
-        }
+        hsl.l = Math.max(0.08, Math.min(0.34, 1 - hsl.l));
+        hsl.s = Math.min(hsl.s, 0.78);
       }
       const limited = limitSurfaceLuminance(parseColor(hslToRgb(hsl, color.a)) || color);
       return hslToRgb(rgbToHsl(limited), color.a);
@@ -272,13 +260,8 @@
   function transformForeground(value) {
     return cachedColorTransform(foregroundColorCache, value, color => {
       const hsl = rgbToHsl(color);
-      if (chroma(color) >= 0.20) {
-        hsl.l = Math.max(0.64, Math.min(0.82, hsl.l));
-        hsl.s = Math.min(hsl.s, 0.72);
-      } else {
-        hsl.l = 0.82 + (0.62 - hsl.l) * 0.10;
-        hsl.s = Math.min(0.05, hsl.s * 0.25);
-      }
+      if (hsl.l < 0.55) hsl.l = 1 - hsl.l;
+      hsl.s = Math.min(hsl.s, 0.78);
       return ensureContrast(hslToRgb(hsl, color.a), MAX_DARK_SURFACE_LUMINANCE, 4.5);
     });
   }
@@ -286,12 +269,8 @@
   function transformBorder(value) {
     return cachedColorTransform(borderColorCache, value, color => {
       const hsl = rgbToHsl(color);
-      if (chroma(color) >= 0.20) {
-        hsl.l = Math.max(0.38, Math.min(0.58, hsl.l));
-      } else {
-        hsl.l = Math.max(0.24, Math.min(0.36, hsl.l));
-        hsl.s = Math.min(0.04, hsl.s * 0.2);
-      }
+      if (hsl.l < 0.5) hsl.l = 1 - hsl.l;
+      hsl.s = Math.min(hsl.s, 0.78);
       return ensureContrast(hslToRgb(hsl, color.a), MAX_DARK_SURFACE_LUMINANCE, 3);
     });
   }
@@ -350,9 +329,22 @@
   }
 
   function removeInternalStyles(element) {
-    element.removeAttribute(ADJUSTED_ATTRIBUTE);
+    element.removeAttribute(PROPERTIES_ATTRIBUTE);
+    element.removeAttribute(LEGACY_ADJUSTED_ATTRIBUTE);
     element.removeAttribute(MONOCHROME_ATTRIBUTE);
     INTERNAL_PROPERTIES.forEach(property => element.style.removeProperty(property));
+  }
+
+  function syncPropertyTokens(element) {
+    const tokens = INTERNAL_PROPERTIES
+      .filter(property => property !== '--fd-original-filter' && element.style.getPropertyValue(property))
+      .map(property => property.slice('--fd-'.length));
+    if (tokens.length) {
+      element.setAttribute(PROPERTIES_ATTRIBUTE, tokens.join(' '));
+      adjustedElements.add(element);
+    } else {
+      element.removeAttribute(PROPERTIES_ATTRIBUTE);
+    }
   }
 
   function setVariable(element, property, value) {
@@ -417,13 +409,14 @@
   function normalizeInheritedColors(element, style, before, after) {
     const parent = element.parentElement;
     const parentOriginal = parent ? originalStyles.get(parent) : null;
-    if (!parent || !parentOriginal) return;
+    if (!parent || !parentOriginal) return false;
     const inheritedCurrent = getComputedStyle(parent).color;
-    if (style.color !== inheritedCurrent) return;
+    if (style.color !== inheritedCurrent) return false;
     const resolvedColor = style.color;
     replaceSnapshotColorReferences(style, resolvedColor, parentOriginal.color);
     replaceSnapshotColorReferences(before, resolvedColor, parentOriginal.color);
     replaceSnapshotColorReferences(after, resolvedColor, parentOriginal.color);
+    return true;
   }
 
   function getFinalBackgroundLuminance(element) {
@@ -440,11 +433,11 @@
     return null;
   }
 
-  function applyStyleSnapshot(element, style) {
+  function applyStyleSnapshot(element, style, skipColor = false) {
     const transformLocalForeground = value => transformForeground(value);
     const transformLocalBorder = value => transformBorder(value);
     setChangedVariable(element, '--fd-bg', style.backgroundColor, transformBackground(style.backgroundColor));
-    setChangedVariable(element, '--fd-color', style.color, transformLocalForeground(style.color));
+    if (!skipColor) setChangedVariable(element, '--fd-color', style.color, transformLocalForeground(style.color));
     if (style.borderTopStyle !== 'none') setChangedVariable(element, '--fd-border-top', style.borderTopColor, transformLocalBorder(style.borderTopColor));
     if (style.borderRightStyle !== 'none') setChangedVariable(element, '--fd-border-right', style.borderRightColor, transformLocalBorder(style.borderRightColor));
     if (style.borderBottomStyle !== 'none') setChangedVariable(element, '--fd-border-bottom', style.borderBottomColor, transformLocalBorder(style.borderBottomColor));
@@ -469,21 +462,21 @@
     }
   }
 
-  function applyPseudoStyle(element, prefix, style) {
+  function applyPseudoStyle(element, prefix, style, skipColor = false) {
     if (style.content === 'none' || style.display === 'none') return;
     const transformLocalForeground = value => transformForeground(value);
     const transformLocalBorder = value => transformBorder(value);
     setChangedVariable(element, `--fd-${prefix}-bg`, style.backgroundColor, transformBackground(style.backgroundColor));
-    setChangedVariable(element, `--fd-${prefix}-color`, style.color, transformLocalForeground(style.color));
+    if (!skipColor) setChangedVariable(element, `--fd-${prefix}-color`, style.color, transformLocalForeground(style.color));
     if (style.borderTopStyle !== 'none') setChangedVariable(element, `--fd-${prefix}-border`, style.borderTopColor, transformLocalBorder(style.borderTopColor));
     if (style.boxShadow !== 'none') setVariable(element, `--fd-${prefix}-shadow`, style.boxShadow);
     if (style.textShadow !== 'none') setVariable(element, `--fd-${prefix}-text-shadow`, style.textShadow);
     setChangedVariable(element, `--fd-${prefix}-bg-image`, style.backgroundImage, rewriteColors(style.backgroundImage, transformBackground));
   }
 
-  function applyPseudoStyles(element, before, after) {
-    applyPseudoStyle(element, 'before', before);
-    applyPseudoStyle(element, 'after', after);
+  function applyPseudoStyles(element, style, before, after) {
+    applyPseudoStyle(element, 'before', before, before.color === style.color);
+    applyPseudoStyle(element, 'after', after, after.color === style.color);
   }
 
   function percentile(values, fraction) {
@@ -579,8 +572,10 @@
       image.toggleAttribute(MONOCHROME_ATTRIBUTE, analysis.monochrome);
       if (analysis.monochrome) {
         setVariable(image, '--fd-original-filter', monochromeFilter(image, style, analysis));
+        adjustedElements.add(image);
+      } else {
+        image.style.removeProperty('--fd-original-filter');
       }
-      adjustedElements.add(image);
       rememberInternalStyle(image);
     };
     if (image.complete && image.naturalWidth) classify();
@@ -592,31 +587,52 @@
     elements.forEach(element => {
       if (!element.isConnected || element.closest('style, script, link, meta')) return;
       const wasMonochrome = element.hasAttribute(MONOCHROME_ATTRIBUTE);
-      if (element.hasAttribute(ADJUSTED_ATTRIBUTE) || wasMonochrome) removeInternalStyles(element);
-      prepared.push({ element, wasMonochrome });
+      const preserveImageState = Boolean(
+        element instanceof HTMLImageElement
+        && wasMonochrome
+        && element.dataset.fdImageSignature
+        && !element.hasAttribute(PROPERTIES_ATTRIBUTE)
+        && !element.hasAttribute(LEGACY_ADJUSTED_ATTRIBUTE)
+      );
+      if (
+        !preserveImageState
+        && (
+          element.hasAttribute(PROPERTIES_ATTRIBUTE)
+          || element.hasAttribute(LEGACY_ADJUSTED_ATTRIBUTE)
+          || wasMonochrome
+        )
+      ) removeInternalStyles(element);
+      prepared.push({ element, wasMonochrome, preserveImageState });
     });
 
-    const snapshots = prepared.map(({ element, wasMonochrome }) => {
-      const style = snapshotStyle(element);
+    const snapshots = prepared.map(({ element, wasMonochrome, preserveImageState }) => {
+      const style = preserveImageState && originalStyles.has(element)
+        ? originalStyles.get(element)
+        : snapshotStyle(element);
       const inspectPseudos = element.matches('a, button, input, textarea, select, label, [role], [class*="icon" i], [class*="button" i], [class*="badge" i], [class*="menu" i], [class*="tooltip" i]');
       const before = inspectPseudos ? snapshotStyle(element, '::before') : { content: 'none', display: 'none' };
       const after = inspectPseudos ? snapshotStyle(element, '::after') : { content: 'none', display: 'none' };
-      normalizeInheritedColors(element, style, before, after);
       return { element, wasMonochrome, style, before, after };
     });
 
     snapshots.forEach(({ element, style }) => originalStyles.set(element, style));
+    snapshots.forEach(snapshot => {
+      snapshot.inheritedColor = normalizeInheritedColors(
+        snapshot.element,
+        snapshot.style,
+        snapshot.before,
+        snapshot.after
+      );
+    });
 
-    snapshots.forEach(({ element, wasMonochrome, style, before, after }) => {
-      applyStyleSnapshot(element, style);
-      applyPseudoStyles(element, before, after);
+    snapshots.forEach(({ element, wasMonochrome, style, before, after, inheritedColor }) => {
       if (element instanceof HTMLImageElement) {
         if (wasMonochrome) element.setAttribute(MONOCHROME_ATTRIBUTE, '');
         processImage(element, style);
-      }
-      if (element.style.cssText.includes('--fd-')) {
-        element.setAttribute(ADJUSTED_ATTRIBUTE, '');
-        adjustedElements.add(element);
+      } else if (!element.matches(PRESERVED_MEDIA_SELECTOR)) {
+        applyStyleSnapshot(element, style, inheritedColor);
+        applyPseudoStyles(element, style, before, after);
+        syncPropertyTokens(element);
       }
       rememberInternalStyle(element);
     });

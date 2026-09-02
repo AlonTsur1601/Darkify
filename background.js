@@ -16,7 +16,7 @@ async function darkifyFrameStates(tabId, version) {
       const hasLegacyState = Boolean(
         document.documentElement?.classList.contains('__force-dark-active__')
         || document.querySelector(
-          '[data-fd-adjusted], [data-fd-monochrome], .__fd_color_adjusted__, .__fd_monochrome_image__'
+          '[data-fd-props], [data-fd-adjusted], [data-fd-monochrome], .__fd_color_adjusted__, .__fd_monochrome_image__'
         )
       );
       return {

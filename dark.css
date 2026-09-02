@@ -9,46 +9,36 @@ html.__force-dark-active__ body {
   background-color: #111315 !important;
 }
 
-html.__force-dark-active__ [data-fd-adjusted] {
-  background-color: var(--fd-bg) !important;
-  color: var(--fd-color) !important;
-  border-top-color: var(--fd-border-top) !important;
-  border-right-color: var(--fd-border-right) !important;
-  border-bottom-color: var(--fd-border-bottom) !important;
-  border-left-color: var(--fd-border-left) !important;
-  outline-color: var(--fd-outline) !important;
-  text-decoration-color: var(--fd-decoration) !important;
-  box-shadow: var(--fd-shadow) !important;
-  text-shadow: var(--fd-text-shadow) !important;
-  background-image: var(--fd-bg-image) !important;
-  caret-color: var(--fd-caret) !important;
-  column-rule-color: var(--fd-column-rule) !important;
-  accent-color: var(--fd-accent) !important;
-}
+html.__force-dark-active__ [data-fd-props~="bg"] { background-color: var(--fd-bg) !important; }
+html.__force-dark-active__ [data-fd-props~="color"] { color: var(--fd-color) !important; }
+html.__force-dark-active__ [data-fd-props~="border-top"] { border-top-color: var(--fd-border-top) !important; }
+html.__force-dark-active__ [data-fd-props~="border-right"] { border-right-color: var(--fd-border-right) !important; }
+html.__force-dark-active__ [data-fd-props~="border-bottom"] { border-bottom-color: var(--fd-border-bottom) !important; }
+html.__force-dark-active__ [data-fd-props~="border-left"] { border-left-color: var(--fd-border-left) !important; }
+html.__force-dark-active__ [data-fd-props~="outline"] { outline-color: var(--fd-outline) !important; }
+html.__force-dark-active__ [data-fd-props~="decoration"] { text-decoration-color: var(--fd-decoration) !important; }
+html.__force-dark-active__ [data-fd-props~="shadow"] { box-shadow: var(--fd-shadow) !important; }
+html.__force-dark-active__ [data-fd-props~="text-shadow"] { text-shadow: var(--fd-text-shadow) !important; }
+html.__force-dark-active__ [data-fd-props~="bg-image"] { background-image: var(--fd-bg-image) !important; }
+html.__force-dark-active__ [data-fd-props~="caret"] { caret-color: var(--fd-caret) !important; }
+html.__force-dark-active__ [data-fd-props~="column-rule"] { column-rule-color: var(--fd-column-rule) !important; }
+html.__force-dark-active__ [data-fd-props~="accent"] { accent-color: var(--fd-accent) !important; }
+html.__force-dark-active__ [data-fd-props~="fill"] { fill: var(--fd-fill) !important; }
+html.__force-dark-active__ [data-fd-props~="stroke"] { stroke: var(--fd-stroke) !important; }
 
-html.__force-dark-active__ [data-fd-adjusted]::before {
-  background-color: var(--fd-before-bg) !important;
-  color: var(--fd-before-color) !important;
-  border-color: var(--fd-before-border) !important;
-  box-shadow: var(--fd-before-shadow) !important;
-  text-shadow: var(--fd-before-text-shadow) !important;
-  background-image: var(--fd-before-bg-image) !important;
-}
+html.__force-dark-active__ [data-fd-props~="before-bg"]::before { background-color: var(--fd-before-bg) !important; }
+html.__force-dark-active__ [data-fd-props~="before-color"]::before { color: var(--fd-before-color) !important; }
+html.__force-dark-active__ [data-fd-props~="before-border"]::before { border-color: var(--fd-before-border) !important; }
+html.__force-dark-active__ [data-fd-props~="before-shadow"]::before { box-shadow: var(--fd-before-shadow) !important; }
+html.__force-dark-active__ [data-fd-props~="before-text-shadow"]::before { text-shadow: var(--fd-before-text-shadow) !important; }
+html.__force-dark-active__ [data-fd-props~="before-bg-image"]::before { background-image: var(--fd-before-bg-image) !important; }
 
-html.__force-dark-active__ [data-fd-adjusted]::after {
-  background-color: var(--fd-after-bg) !important;
-  color: var(--fd-after-color) !important;
-  border-color: var(--fd-after-border) !important;
-  box-shadow: var(--fd-after-shadow) !important;
-  text-shadow: var(--fd-after-text-shadow) !important;
-  background-image: var(--fd-after-bg-image) !important;
-}
-
-html.__force-dark-active__ svg[data-fd-adjusted],
-html.__force-dark-active__ svg [data-fd-adjusted] {
-  fill: var(--fd-fill) !important;
-  stroke: var(--fd-stroke) !important;
-}
+html.__force-dark-active__ [data-fd-props~="after-bg"]::after { background-color: var(--fd-after-bg) !important; }
+html.__force-dark-active__ [data-fd-props~="after-color"]::after { color: var(--fd-after-color) !important; }
+html.__force-dark-active__ [data-fd-props~="after-border"]::after { border-color: var(--fd-after-border) !important; }
+html.__force-dark-active__ [data-fd-props~="after-shadow"]::after { box-shadow: var(--fd-after-shadow) !important; }
+html.__force-dark-active__ [data-fd-props~="after-text-shadow"]::after { text-shadow: var(--fd-after-text-shadow) !important; }
+html.__force-dark-active__ [data-fd-props~="after-bg-image"]::after { background-image: var(--fd-after-bg-image) !important; }
 
 /* Only confidently detected neutral image assets receive one inversion.
    Color images and grayscale photographs remain entirely untouched. */
