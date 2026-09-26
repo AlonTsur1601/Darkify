@@ -17,6 +17,8 @@
   const LEGACY_ADJUSTED_ATTRIBUTE = 'data-fd-adjusted';
   const MONOCHROME_ATTRIBUTE = 'data-fd-monochrome';
   const SAMPLING_ATTRIBUTE = 'data-fd-sampling';
+  const GROUP_ATTRIBUTE = 'data-fd-group';
+  const GENERATED_STYLE_ATTRIBUTE = 'data-fd-generated-styles';
   const PRESERVED_MEDIA_SELECTOR = 'img, picture, video, canvas, iframe, object, embed';
   const host = location.hostname;
   const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -31,6 +33,23 @@
     '--fd-after-bg', '--fd-after-color', '--fd-after-border',
     '--fd-after-shadow', '--fd-after-text-shadow', '--fd-after-bg-image',
     '--fd-original-filter'
+  ];
+
+  const GROUP_PROPERTY_RULES = [
+    ['--fd-bg', 'background-color', ''], ['--fd-color', 'color', ''],
+    ['--fd-border-top', 'border-top-color', ''], ['--fd-border-right', 'border-right-color', ''],
+    ['--fd-border-bottom', 'border-bottom-color', ''], ['--fd-border-left', 'border-left-color', ''],
+    ['--fd-outline', 'outline-color', ''], ['--fd-decoration', 'text-decoration-color', ''],
+    ['--fd-shadow', 'box-shadow', ''], ['--fd-text-shadow', 'text-shadow', ''],
+    ['--fd-bg-image', 'background-image', ''], ['--fd-fill', 'fill', ''],
+    ['--fd-stroke', 'stroke', ''], ['--fd-caret', 'caret-color', ''],
+    ['--fd-column-rule', 'column-rule-color', ''], ['--fd-accent', 'accent-color', ''],
+    ['--fd-before-bg', 'background-color', '::before'], ['--fd-before-color', 'color', '::before'],
+    ['--fd-before-border', 'border-color', '::before'], ['--fd-before-shadow', 'box-shadow', '::before'],
+    ['--fd-before-text-shadow', 'text-shadow', '::before'], ['--fd-before-bg-image', 'background-image', '::before'],
+    ['--fd-after-bg', 'background-color', '::after'], ['--fd-after-color', 'color', '::after'],
+    ['--fd-after-border', 'border-color', '::after'], ['--fd-after-shadow', 'box-shadow', '::after'],
+    ['--fd-after-text-shadow', 'text-shadow', '::after'], ['--fd-after-bg-image', 'background-image', '::after']
   ];
 
   const SHADOW_STYLE_ATTRIBUTE = 'data-fd-shadow-styles';
@@ -81,22 +100,28 @@
   let settings = { enabled: true, siteOverrides: {} };
   let active = false;
   let workScheduled = false;
+  let firstScanTask = true;
   const queuedElements = new Set();
   const pendingTraversals = [];
   const queuedTraversalRoots = new WeakSet();
   const pendingAttributeRefreshes = new Map();
   const pendingInteractionElements = new Set();
   const cacheableTraversalElements = new WeakSet();
+  const siblingPhases = new WeakMap();
+  const siblingPhaseEpochs = new WeakMap();
   const traversalSnapshotCache = new Map();
   let interactionRefreshTimer = null;
+  let generatedGroupStyle = null;
+  let generatedGroupCount = 0;
   const adjustedElements = new Set();
-  const observedRoots = new WeakSet();
+  let observedRoots = new WeakSet();
   const originalStyles = new WeakMap();
   const internalStyleStates = new WeakMap();
   const backgroundColorCache = new Map();
   const foregroundColorCache = new Map();
   const borderColorCache = new Map();
   const MAX_DARK_SURFACE_LUMINANCE = 0.14;
+  const MAX_GENERATED_GROUPS = 2048;
 
   function parseColor(value) {
     if (!value || value === 'transparent') return null;
@@ -329,10 +354,11 @@
   }
 
   function shouldForceDark() {
+    if (!settings.enabled) return false;
     const override = settings.siteOverrides[host];
     if (override === false) return false;
     if (override === true) return true;
-    if (!settings.enabled || !darkModeQuery.matches) return false;
+    if (!darkModeQuery.matches) return false;
     if (active) return true;
     return !siteLooksAlreadyDark();
   }
@@ -342,7 +368,58 @@
     element.removeAttribute(LEGACY_ADJUSTED_ATTRIBUTE);
     element.removeAttribute(MONOCHROME_ATTRIBUTE);
     element.removeAttribute(SAMPLING_ATTRIBUTE);
+    element.removeAttribute(GROUP_ATTRIBUTE);
     INTERNAL_PROPERTIES.forEach(property => element.style.removeProperty(property));
+  }
+
+  function ensureGeneratedGroupStyle() {
+    if (generatedGroupStyle?.isConnected && generatedGroupStyle.sheet) return generatedGroupStyle;
+    const style = document.createElement('style');
+    style.setAttribute(GENERATED_STYLE_ATTRIBUTE, '');
+    (document.head || document.documentElement).append(style);
+    generatedGroupStyle = style;
+    return style;
+  }
+
+  function applyGeneratedGroup(element, cacheEntry) {
+    if (element.style.length) {
+      INTERNAL_PROPERTIES.forEach(property => {
+        if (element.style.getPropertyValue(property)) element.style.removeProperty(property);
+      });
+    }
+    element.removeAttribute(LEGACY_ADJUSTED_ATTRIBUTE);
+    element.removeAttribute(PROPERTIES_ATTRIBUTE);
+    element.setAttribute(GROUP_ATTRIBUTE, cacheEntry.groupId);
+    adjustedElements.add(element);
+  }
+
+  function createGeneratedGroup(element, cacheEntry) {
+    if (cacheEntry.uses < 2 || generatedGroupCount >= MAX_GENERATED_GROUPS) return false;
+    const declarations = GROUP_PROPERTY_RULES
+      .map(([variable, property, suffix]) => [property, suffix, element.style.getPropertyValue(variable)])
+      .filter(([, , value]) => value);
+    if (!declarations.length) return false;
+    const style = ensureGeneratedGroupStyle();
+    if (!style.sheet) return false;
+    const groupId = `g${(++generatedGroupCount).toString(36)}`;
+    try {
+      const bySuffix = new Map();
+      declarations.forEach(([property, suffix, value]) => {
+        if (!bySuffix.has(suffix)) bySuffix.set(suffix, []);
+        bySuffix.get(suffix).push([property, value]);
+      });
+      bySuffix.forEach((properties, suffix) => {
+        const index = style.sheet.cssRules.length;
+        style.sheet.insertRule(`html.${ACTIVE_CLASS} [${GROUP_ATTRIBUTE}="${groupId}"]${suffix} {}`, index);
+        const rule = style.sheet.cssRules[index];
+        properties.forEach(([property, value]) => rule.style.setProperty(property, value, 'important'));
+      });
+      cacheEntry.groupId = groupId;
+      applyGeneratedGroup(element, cacheEntry);
+      return true;
+    } catch (error) {
+      return false;
+    }
   }
 
   function syncPropertyTokens(element) {
@@ -420,13 +497,27 @@
   }
 
   function siblingPhase(element) {
+    const parent = element.parentElement;
+    const epoch = parent ? siblingPhaseEpochs.get(parent) || 0 : 0;
+    const cached = siblingPhases.get(element);
+    if (cached?.epoch === epoch) return cached.phase;
+    const previous = element.previousElementSibling;
     let phase = 1;
-    let sibling = element.previousElementSibling;
-    while (sibling && phase < 12) {
-      phase++;
-      sibling = sibling.previousElementSibling;
+    if (previous) {
+      const previousEntry = siblingPhases.get(previous);
+      if (previousEntry?.epoch === epoch) {
+        phase = previousEntry.phase % 12 + 1;
+      } else {
+        let index = 0;
+        for (const sibling of parent?.children || []) {
+          index++;
+          if (sibling === element) break;
+        }
+        phase = (Math.max(1, index) - 1) % 12 + 1;
+      }
     }
-    return phase === 12 && sibling ? 0 : phase;
+    siblingPhases.set(element, { epoch, phase });
+    return phase;
   }
 
   function traversalSnapshotKey(element, inspectPseudos) {
@@ -442,6 +533,7 @@
     return [
       contexts.join('>'),
       `phase:${siblingPhase(element)}`,
+      `edge:${element.matches(':first-child') ? 'f' : ''}${element.matches(':last-child') ? 'l' : ''}`,
       `pseudo:${inspectPseudos ? 1 : 0}`,
       `style:${element.getAttribute('style') || ''}`
     ].join('||');
@@ -660,6 +752,7 @@
       const hadAdjustments = Boolean(
         element.hasAttribute(PROPERTIES_ATTRIBUTE)
         || element.hasAttribute(LEGACY_ADJUSTED_ATTRIBUTE)
+        || element.hasAttribute(GROUP_ATTRIBUTE)
         || wasMonochrome
       );
       const preserveImageState = Boolean(
@@ -668,6 +761,7 @@
         && element.dataset.fdImageSignature
         && !element.hasAttribute(PROPERTIES_ATTRIBUTE)
         && !element.hasAttribute(LEGACY_ADJUSTED_ATTRIBUTE)
+        && !element.hasAttribute(GROUP_ATTRIBUTE)
       );
       if (
         !preserveImageState
@@ -688,24 +782,29 @@
       const cacheKey = cacheable && !preserveImageState && !element.matches(PRESERVED_MEDIA_SELECTOR)
         ? traversalSnapshotKey(element, inspectPseudos)
         : null;
-      let cached = cacheKey ? traversalSnapshotCache.get(cacheKey) : null;
-      if (!cached) {
+      let cacheEntry = cacheKey ? traversalSnapshotCache.get(cacheKey) : null;
+      if (!cacheEntry) {
         const style = preserveImageState && originalStyles.has(element)
           ? originalStyles.get(element)
           : snapshotStyle(element);
         const before = inspectPseudos ? snapshotStyle(element, '::before') : { content: 'none', display: 'none' };
         const after = inspectPseudos ? snapshotStyle(element, '::after') : { content: 'none', display: 'none' };
-        cached = { style, before, after };
-        if (cacheKey) traversalSnapshotCache.set(cacheKey, cloneSnapshot(cached));
+        cacheEntry = { snapshot: cloneSnapshot({ style, before, after }), uses: 0 };
+        if (cacheKey) traversalSnapshotCache.set(cacheKey, cacheEntry);
       }
-      const { style, before, after } = cloneSnapshot(cached);
-      return { element, wasMonochrome, style, before, after, sampling };
+      if (cacheKey) cacheEntry.uses++;
+      const { style, before, after } = cloneSnapshot(cacheEntry.snapshot);
+      return { element, wasMonochrome, style, before, after, sampling, cacheEntry: cacheKey ? cacheEntry : null };
     });
 
     const snapshotByElement = new Map(snapshots.map(snapshot => [snapshot.element, snapshot.style]));
     const parentColorCache = new Map();
     snapshots.forEach(({ element, style }) => originalStyles.set(element, style));
     snapshots.forEach(snapshot => {
+      if (typeof snapshot.cacheEntry?.inheritedColor === 'boolean') {
+        snapshot.inheritedColor = snapshot.cacheEntry.inheritedColor;
+        return;
+      }
       const parent = snapshot.element.parentElement;
       let parentCurrentColor = null;
       if (parent) {
@@ -722,17 +821,23 @@
         snapshot.after,
         parentCurrentColor
       );
+      if (snapshot.cacheEntry) snapshot.cacheEntry.inheritedColor = snapshot.inheritedColor;
     });
 
     const samplingElements = [];
-    snapshots.forEach(({ element, wasMonochrome, style, before, after, inheritedColor, sampling }) => {
+    snapshots.forEach(({ element, wasMonochrome, style, before, after, inheritedColor, sampling, cacheEntry }) => {
       if (element instanceof HTMLImageElement) {
         if (wasMonochrome) element.setAttribute(MONOCHROME_ATTRIBUTE, '');
         processImage(element, style);
       } else if (!element.matches(PRESERVED_MEDIA_SELECTOR)) {
-        applyStyleSnapshot(element, style, inheritedColor);
-        applyPseudoStyles(element, style, before, after);
-        syncPropertyTokens(element);
+        if (cacheEntry?.groupId) {
+          applyGeneratedGroup(element, cacheEntry);
+        } else {
+          applyStyleSnapshot(element, style, inheritedColor);
+          applyPseudoStyles(element, style, before, after);
+          syncPropertyTokens(element);
+          if (cacheEntry) createGeneratedGroup(element, cacheEntry);
+        }
       }
       if (sampling) samplingElements.push(element);
       else rememberInternalStyle(element);
@@ -748,14 +853,14 @@
     }
   }
 
-  function runWork(deadline) {
+  function runWork(deadline, initial = false) {
     workScheduled = false;
     if (!active) return;
     const batch = [];
-    const maximum = 36;
+    const maximum = initial ? 24 : 600;
     let directElements = 0;
     while ((queuedElements.size || pendingTraversals.length) && batch.length < maximum) {
-      if (queuedElements.size && (!pendingTraversals.length || directElements < 24)) {
+      if (queuedElements.size && (!pendingTraversals.length || directElements < 96)) {
         const iterator = queuedElements.values().next();
         queuedElements.delete(iterator.value);
         batch.push(iterator.value);
@@ -781,7 +886,10 @@
   function scheduleWork() {
     if (workScheduled || !active) return;
     workScheduled = true;
-    if (globalThis.scheduler?.postTask) {
+    if (firstScanTask) {
+      firstScanTask = false;
+      queueMicrotask(() => runWork(null, true));
+    } else if (globalThis.scheduler?.postTask) {
       globalThis.scheduler.postTask(() => runWork(null), { priority: 'background' }).catch(() => {
         workScheduled = false;
         if (active) setTimeout(() => runWork(null), 0);
@@ -844,9 +952,19 @@
     if (!active) return;
     mutations.forEach(mutation => {
       if (mutation.type === 'childList') {
+        if (mutation.target instanceof Element) {
+          siblingPhaseEpochs.set(
+            mutation.target,
+            (siblingPhaseEpochs.get(mutation.target) || 0) + 1
+          );
+        }
         if (
           [...mutation.addedNodes, ...mutation.removedNodes]
-            .some(node => node.nodeType === 1 && node.matches?.('style, link[rel="stylesheet"]'))
+            .some(node => (
+              node.nodeType === 1
+              && node.matches?.('style, link[rel="stylesheet"]')
+              && !node.hasAttribute?.(GENERATED_STYLE_ATTRIBUTE)
+            ))
         ) traversalSnapshotCache.clear();
         mutation.addedNodes.forEach(node => {
           if (node.nodeType === 1) enqueueRoot(node);
@@ -854,6 +972,13 @@
         mutation.removedNodes.forEach(node => {
           if (node.nodeType === 1) enqueueRoot(node);
         });
+        if (mutation.addedNodes.length !== mutation.removedNodes.length) {
+          if (mutation.nextSibling && mutation.target instanceof Element) {
+            enqueueRoot(mutation.target);
+          } else if (mutation.previousSibling instanceof Element) {
+            enqueueElement(mutation.previousSibling);
+          }
+        }
       } else {
         if (
           mutation.attributeName === 'style'
@@ -862,6 +987,7 @@
         traversalSnapshotCache.clear();
         if (
           mutation.target.hasAttribute(PROPERTIES_ATTRIBUTE)
+          || mutation.target.hasAttribute(GROUP_ATTRIBUTE)
           || mutation.target.hasAttribute(MONOCHROME_ATTRIBUTE)
         ) mutation.target.setAttribute(SAMPLING_ATTRIBUTE, '');
         if (mutation.target instanceof HTMLImageElement) delete mutation.target.dataset.fdImageSignature;
@@ -894,6 +1020,8 @@
   }
 
   function clearAllAdjustments() {
+    observer.disconnect();
+    observedRoots = new WeakSet();
     queuedElements.clear();
     while (pendingTraversals.length) {
       queuedTraversalRoots.delete(pendingTraversals.pop().root);
@@ -902,6 +1030,10 @@
     pendingAttributeRefreshes.clear();
     pendingInteractionElements.clear();
     traversalSnapshotCache.clear();
+    generatedGroupStyle?.remove();
+    generatedGroupStyle = null;
+    generatedGroupCount = 0;
+    firstScanTask = true;
     if (interactionRefreshTimer) clearTimeout(interactionRefreshTimer);
     interactionRefreshTimer = null;
     adjustedElements.forEach(element => {
@@ -923,6 +1055,7 @@
     }
     if (active) return;
     active = true;
+    firstScanTask = true;
     document.documentElement.classList.add(ACTIVE_CLASS);
     observeRoot(document.documentElement);
     requestUrgentRefresh();
@@ -954,6 +1087,7 @@
         pendingInteractionElements.add(node);
         if (
           node.hasAttribute(PROPERTIES_ATTRIBUTE)
+          || node.hasAttribute(GROUP_ATTRIBUTE)
           || node.hasAttribute(MONOCHROME_ATTRIBUTE)
         ) node.setAttribute(SAMPLING_ATTRIBUTE, '');
       }

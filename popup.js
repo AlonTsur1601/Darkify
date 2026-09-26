@@ -5,6 +5,11 @@ const siteWarningEl = document.getElementById('siteWarning');
 
 let currentHost = '';
 
+function updateSiteAvailability() {
+  siteMode.disabled = !currentHost || !globalToggle.checked;
+  siteMode.classList.toggle('extension-paused', !globalToggle.checked);
+}
+
 const INTERNAL_SCHEMES = ['chrome:', 'chrome-extension:', 'edge:', 'about:', 'devtools:'];
 
 function getActiveTabInfo(callback) {
@@ -47,17 +52,18 @@ function load() {
       if (overrides[host] === true) siteMode.value = 'on';
       else if (overrides[host] === false) siteMode.value = 'off';
       else siteMode.value = 'auto';
-      siteMode.disabled = !host;
+      updateSiteAvailability();
     });
   });
 }
 
 globalToggle.addEventListener('change', () => {
+  updateSiteAvailability();
   chrome.storage.sync.set({ enabled: globalToggle.checked });
 });
 
 siteMode.addEventListener('change', () => {
-  if (!currentHost) return;
+  if (!currentHost || !globalToggle.checked) return;
   chrome.storage.sync.get(['siteOverrides'], (data) => {
     const overrides = data.siteOverrides || {};
     if (siteMode.value === 'on') overrides[currentHost] = true;
