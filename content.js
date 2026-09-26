@@ -101,6 +101,7 @@
   const AUTO_DARK_DELAY_MS = 3000;
   let autoDarkReadyAt = null;
   let autoDarkTimer = null;
+  const repairedFontSources = new Map();
   const imageAnalysisCache = new Map();
   const imageAnalysisQueue = [];
   let runningImageAnalyses = 0;
@@ -325,6 +326,41 @@
       return replacement;
     });
     return changed ? rewritten : null;
+  }
+
+  function repairLegacyFontSources() {
+    if (!settings.enabled) {
+      repairedFontSources.forEach(({ original, repaired }, rule) => {
+        if (rule.style.getPropertyValue('src') === repaired) rule.style.setProperty('src', original);
+      });
+      repairedFontSources.clear();
+      return;
+    }
+    const inspectRules = rules => {
+      for (const rule of rules) {
+        if (rule.type === 5) {
+          const original = rule.style.getPropertyValue('src');
+          // Chrome cannot decode EOT. An untyped EOT source is nevertheless
+          // downloaded and tried before the usable font, producing OTS errors.
+          // Only annotate it when a modern fallback is already supplied.
+          if (!/format\(\s*['"]?(?:woff2?|truetype|opentype)\b/i.test(original)) continue;
+          const repaired = original.replace(/url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\s*\)(\s*format\([^)]*\))?/gi, (source, format) => {
+            if (format || !/\.eot(?:[?#'"\s)]|$)/i.test(source)) return source;
+            return `${source} format("embedded-opentype")`;
+          });
+          if (repaired === original) continue;
+          rule.style.setProperty('src', repaired);
+          repairedFontSources.set(rule, { original, repaired: rule.style.getPropertyValue('src') });
+        } else if (rule.cssRules) {
+          inspectRules(rule.cssRules);
+        }
+      }
+    };
+    for (const sheet of document.styleSheets) {
+      // Cross-origin stylesheets may deliberately prohibit CSSOM access.
+      // Do not fetch/rewrite them or replace any font with a guessed substitute.
+      try { inspectRules(sheet.cssRules); } catch { /* Keep inaccessible CSS intact. */ }
+    }
   }
 
   function getVisibleBackgroundLuminance(element) {
@@ -1106,6 +1142,7 @@
 
   function apply() {
     document.documentElement.setAttribute(VERSION_ATTRIBUTE, contentVersion);
+    repairLegacyFontSources();
     if (autoDarkTimer !== null) clearTimeout(autoDarkTimer);
     autoDarkTimer = null;
     const override = settings.siteOverrides[host];
@@ -1186,9 +1223,15 @@
     .forEach(type => document.addEventListener(type, refreshInteractionPath, true));
 
   darkModeQuery.addEventListener('change', apply);
+  document.addEventListener('load', event => {
+    if (settings.enabled && event.target instanceof HTMLLinkElement && event.target.relList.contains('stylesheet')) {
+      repairLegacyFontSources();
+    }
+  }, true);
   chrome.storage.sync.get(['enabled', 'siteOverrides'], data => {
     if (typeof data.enabled === 'boolean') settings.enabled = data.enabled;
     if (data.siteOverrides) settings.siteOverrides = data.siteOverrides;
+    repairLegacyFontSources();
     scheduleApply();
   });
 
