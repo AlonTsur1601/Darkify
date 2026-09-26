@@ -103,7 +103,6 @@
   const AUTO_DARK_DELAY_MS = 3000;
   let autoDarkReadyAt = null;
   let autoDarkTimer = null;
-  const repairedFontSources = new Map();
   const imageAnalysisCache = new Map();
   const imageAnalysisQueue = [];
   let runningImageAnalyses = 0;
@@ -331,16 +330,10 @@
   }
 
   function repairLegacyFontSources() {
-    if (!settings.enabled || settings.siteOverrides[host] === false) {
-      repairedFontSources.forEach(({ original, repaired }, rule) => {
-        // A removed/replaced/read-only font rule must never block disabling.
-        try {
-          if (rule.style.getPropertyValue('src') === repaired) rule.style.setProperty('src', original);
-        } catch { /* Leave unavailable font rules alone. */ }
-      });
-      repairedFontSources.clear();
-      return;
-    }
+    // Format metadata is a document-lifetime compatibility correction, not a
+    // dark-mode style. Restoring an untyped EOT on disable/Never makes Chrome
+    // retry the unsupported font and emit the same decoding warnings again.
+    if (!settings.enabled || settings.siteOverrides[host] === false) return;
     const inspectRules = rules => {
       for (const rule of rules) {
         if (rule.type === 5) {
@@ -355,7 +348,6 @@
           });
           if (repaired === original) continue;
           rule.style.setProperty('src', repaired);
-          repairedFontSources.set(rule, { original, repaired: rule.style.getPropertyValue('src') });
         } else if (rule.cssRules) {
           inspectRules(rule.cssRules);
         }

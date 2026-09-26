@@ -132,20 +132,30 @@ async function checkInjection() {
 
 function checkFonts() {
   let source = 'url("font.eot?version=1"),url("font.woff") format("woff")';
-  let failRestore = false;
+  let writes = 0;
   const context = { document: { styleSheets: [{ cssRules: [{ type: 5, style: {
     getPropertyValue: () => source,
-    setProperty: (_, value) => { if (failRestore) throw Error('Read-only removed rule'); source = value; }
+    setProperty: (_, value) => { writes++; source = value; }
   } }] }] } };
   vm.createContext(context);
-  vm.runInContext(`let settings={enabled:true,siteOverrides:{}};const host='example.test',repairedFontSources=new Map();
+  vm.runInContext(`let settings={enabled:true,siteOverrides:{}};const host='example.test';
     ${between('  function repairLegacyFontSources()', '  function getVisibleBackgroundLuminance')}
-    this.repair=repairLegacyFontSources;this.disable=()=>settings.enabled=false;`, context);
+    this.repair=repairLegacyFontSources;this.mode=(enabled,never)=>{settings.enabled=enabled;settings.siteOverrides=never?{[host]:false}:{}};`, context);
   context.repair(); assert.match(source, /embedded-opentype/);
-  failRestore = true; context.disable(); assert.doesNotThrow(() => context.repair());
+  const corrected = source;
+  for (let cycle = 0; cycle < 10; cycle++) {
+    for (const [enabled, never] of [[false,false],[true,false],[true,true],[true,false]]) {
+      context.mode(enabled, never); context.repair();
+      assert.equal(source, corrected, 'Mode changes must never reintroduce unsupported EOT');
+    }
+  }
+  assert.equal(writes, 1, 'Correction must be idempotent across mode cycles');
+  for (const untouched of ['url("only.eot?x=1")', 'url("modern.woff2") format("woff2")', 'url("typed.eot") format("embedded-opentype"),url("modern.ttf") format("truetype")']) {
+    source = untouched; context.repair(); assert.equal(source, untouched);
+  }
 }
 
 (async () => {
   checkTransitions(); await checkInjection(); checkFonts();
-  console.log('PASS: startup/settings races, mode transitions, exact Auto grace, native theme priority, same-version reload recovery, upgrade/fresh injection, font restoration failure');
+  console.log('PASS: startup/settings races, mode transitions, exact Auto grace, native theme priority, same-version reload recovery, upgrade/fresh injection, persistent and idempotent font correction');
 })().catch(error => { console.error(error); process.exitCode = 1; });
