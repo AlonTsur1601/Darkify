@@ -12,7 +12,10 @@ async function darkifyFrameStates(tabId, version) {
     target: { tabId, allFrames: true },
     func: expectedVersion => {
       const documentVersion = document.documentElement?.getAttribute('data-fd-version') || null;
-      const installedVersion = window.__darkifyContentVersion || documentVersion;
+      // Only the marker in the CURRENT isolated world proves a live engine.
+      // DOM attributes survive extension reloads, even at the same version;
+      // the old world's storage listeners then become disconnected.
+      const installedVersion = window.__darkifyContentVersion || null;
       const hasLegacyState = Boolean(
         document.documentElement?.classList.contains('__force-dark-active__')
         || document.querySelector(
@@ -24,7 +27,7 @@ async function darkifyFrameStates(tabId, version) {
         needsInjection: installedVersion !== expectedVersion,
         needsReload: Boolean(
           (installedVersion && installedVersion !== expectedVersion)
-          || (!installedVersion && hasLegacyState)
+          || (!installedVersion && (documentVersion || hasLegacyState))
         )
       };
     },
@@ -41,11 +44,11 @@ async function darkifyFrameStates(tabId, version) {
 async function injectIntoTab(tabId, version) {
   try {
     const frameStates = await darkifyFrameStates(tabId, version);
-    const hasPreviousVersion = frameStates.some(state => state.needsReload);
-    if (hasPreviousVersion) {
+    const hasStaleInstance = frameStates.some(state => state.needsReload);
+    if (hasStaleInstance) {
       // An extension reload does not reliably stop observers and event
       // listeners installed by the previous isolated world. Reload once when
-      // replacing a running Darkify version so the tab cannot run two color
+      // replacing a running/disconnected instance so the tab cannot run two color
       // engines at the same time.
       await chrome.tabs.reload(tabId);
       return;

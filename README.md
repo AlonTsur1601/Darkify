@@ -28,8 +28,9 @@ disable it globally or set an override for the current website.
 Chrome does not automatically update unpacked extensions. Download a newer
 release and replace the extracted files when you want to update Darkify, then
 open `chrome://extensions` and click **Reload** on the Darkify card. Existing
-tabs running an older Darkify version are refreshed once so that an old content
-script cannot remain active alongside the new one.
+tabs running a disconnected Darkify instance are refreshed once, even when the
+version number is unchanged, so that stale content scripts cannot ignore new
+preferences or remain active alongside the new instance.
 
 ## How it works
 
@@ -67,6 +68,9 @@ script cannot remain active alongside the new one.
 
 There is no build step. Load this directory as an unpacked Manifest V3
 extension, edit the source, then reload the extension and the page under test.
+
+Run `node tests/regression.cjs` to check mode transitions, the Auto grace period,
+startup preference races, same-version reload recovery and font-rule failures.
 
 ## Privacy
 

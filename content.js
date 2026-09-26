@@ -98,6 +98,8 @@
   `;
 
   let settings = { enabled: true, siteOverrides: {} };
+  let settingsLoaded = false;
+  const changedSettingKeys = new Set();
   const AUTO_DARK_DELAY_MS = 3000;
   let autoDarkReadyAt = null;
   let autoDarkTimer = null;
@@ -329,9 +331,12 @@
   }
 
   function repairLegacyFontSources() {
-    if (!settings.enabled) {
+    if (!settings.enabled || settings.siteOverrides[host] === false) {
       repairedFontSources.forEach(({ original, repaired }, rule) => {
-        if (rule.style.getPropertyValue('src') === repaired) rule.style.setProperty('src', original);
+        // A removed/replaced/read-only font rule must never block disabling.
+        try {
+          if (rule.style.getPropertyValue('src') === repaired) rule.style.setProperty('src', original);
+        } catch { /* Leave unavailable font rules alone. */ }
       });
       repairedFontSources.clear();
       return;
@@ -1142,7 +1147,7 @@
 
   function apply() {
     document.documentElement.setAttribute(VERSION_ATTRIBUTE, contentVersion);
-    repairLegacyFontSources();
+    if (!settingsLoaded) return;
     if (autoDarkTimer !== null) clearTimeout(autoDarkTimer);
     autoDarkTimer = null;
     const override = settings.siteOverrides[host];
@@ -1157,6 +1162,7 @@
         active = false;
         document.documentElement.classList.remove(ACTIVE_CLASS);
         clearAllAdjustments();
+        repairLegacyFontSources();
         return;
       }
     } else {
@@ -1169,8 +1175,10 @@
       active = false;
       document.documentElement.classList.remove(ACTIVE_CLASS);
       clearAllAdjustments();
+      repairLegacyFontSources();
       return;
     }
+    repairLegacyFontSources();
     if (active) return;
     active = true;
     firstScanTask = true;
@@ -1224,21 +1232,30 @@
 
   darkModeQuery.addEventListener('change', apply);
   document.addEventListener('load', event => {
-    if (settings.enabled && event.target instanceof HTMLLinkElement && event.target.relList.contains('stylesheet')) {
+    if (settingsLoaded && settings.enabled && event.target instanceof HTMLLinkElement && event.target.relList.contains('stylesheet')) {
       repairLegacyFontSources();
     }
   }, true);
   chrome.storage.sync.get(['enabled', 'siteOverrides'], data => {
-    if (typeof data.enabled === 'boolean') settings.enabled = data.enabled;
-    if (data.siteOverrides) settings.siteOverrides = data.siteOverrides;
+    // A delayed initial read can return an older snapshot after onChanged.
+    // Never let it overwrite a newer toggle or per-site preference.
+    if (!changedSettingKeys.has('enabled') && typeof data.enabled === 'boolean') settings.enabled = data.enabled;
+    if (!changedSettingKeys.has('siteOverrides') && data.siteOverrides) settings.siteOverrides = data.siteOverrides;
+    settingsLoaded = true;
     repairLegacyFontSources();
     scheduleApply();
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
-    if (changes.enabled) settings.enabled = changes.enabled.newValue;
-    if (changes.siteOverrides) settings.siteOverrides = changes.siteOverrides.newValue || {};
+    if (changes.enabled) {
+      changedSettingKeys.add('enabled');
+      settings.enabled = changes.enabled.newValue !== false;
+    }
+    if (changes.siteOverrides) {
+      changedSettingKeys.add('siteOverrides');
+      settings.siteOverrides = changes.siteOverrides.newValue || {};
+    }
     apply();
   });
 })();
