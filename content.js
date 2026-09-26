@@ -98,6 +98,9 @@
   `;
 
   let settings = { enabled: true, siteOverrides: {} };
+  const AUTO_DARK_DELAY_MS = 3000;
+  let autoDarkReadyAt = null;
+  let autoDarkTimer = null;
   const imageAnalysisCache = new Map();
   const imageAnalysisQueue = [];
   let runningImageAnalyses = 0;
@@ -1103,6 +1106,27 @@
 
   function apply() {
     document.documentElement.setAttribute(VERSION_ATTRIBUTE, contentVersion);
+    if (autoDarkTimer !== null) clearTimeout(autoDarkTimer);
+    autoDarkTimer = null;
+    const override = settings.siteOverrides[host];
+    const automaticDark = settings.enabled && override !== true && override !== false && darkModeQuery.matches;
+    if (automaticDark) {
+      // Give the site's own theme time to settle. Visibility/pageshow events
+      // must not restart the grace period or delay processing indefinitely.
+      if (autoDarkReadyAt === null) autoDarkReadyAt = performance.now() + AUTO_DARK_DELAY_MS;
+      const remaining = autoDarkReadyAt - performance.now();
+      if (remaining > 0) {
+        autoDarkTimer = setTimeout(scheduleApply, remaining);
+        active = false;
+        document.documentElement.classList.remove(ACTIVE_CLASS);
+        clearAllAdjustments();
+        return;
+      }
+    } else {
+      // Disable, a light system theme, or a manual override cancels the wait.
+      // Returning to Auto starts a fresh grace period.
+      autoDarkReadyAt = null;
+    }
     const nextActive = shouldForceDark();
     if (!nextActive) {
       active = false;

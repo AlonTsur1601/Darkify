@@ -34,6 +34,9 @@ script cannot remain active alongside the new one.
 ## How it works
 
 - Light pages are darkened only when the system prefers dark mode.
+- Auto waits 3 seconds before checking whether the page still needs darkening,
+  giving the website's native automatic dark theme priority. Always force dark
+  applies immediately; disabling Darkify cancels any pending wait.
 - Document colors are rewritten in place across the entire page; Darkify does
   not use a viewport-sized inversion overlay.
 - Color images and transparent images remain in their original DOM position
