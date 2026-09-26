@@ -89,3 +89,37 @@ chrome.runtime.onInstalled.addListener(() => {
 
 initializeSettings();
 injectIntoOpenTabs().catch(() => {});
+
+chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (sender.id !== chrome.runtime.id || message?.type !== 'darkify-image') return;
+  const source = typeof message.source === 'string' ? message.source : '';
+  if (!/^https?:\/\//i.test(source)) return;
+  (async () => {
+    const response = await fetch(source, {
+      credentials: 'omit', cache: 'force-cache', signal: AbortSignal.timeout(8000)
+    });
+    const type = response.headers.get('content-type')?.split(';')[0];
+    if (!response.ok || !type?.startsWith('image/')) return null;
+    const reader = response.body.getReader();
+    const chunks = [];
+    let length = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.length;
+      if (length > 2097152) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+    const parts = [];
+    for (const chunk of chunks) {
+      for (let offset = 0; offset < chunk.length; offset += 8192) {
+        parts.push(String.fromCharCode(...chunk.subarray(offset, offset + 8192)));
+      }
+    }
+    return { dataUrl: `data:${type};base64,${btoa(parts.join(''))}` };
+  })().then(respond, () => respond(null));
+  return true;
+});

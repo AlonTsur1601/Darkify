@@ -98,6 +98,9 @@
   `;
 
   let settings = { enabled: true, siteOverrides: {} };
+  const imageAnalysisCache = new Map();
+  const imageAnalysisQueue = [];
+  let runningImageAnalyses = 0;
   let active = false;
   let workScheduled = false;
   let firstScanTask = true;
@@ -683,11 +686,58 @@
       const extremeRatio = nearExtremes / visible;
       const smallAsset = img.naturalWidth <= 192 && img.naturalHeight <= 192;
       return {
-        monochrome: luminanceBins.size <= 6 || (smallAsset && (transparentRatio >= 0.08 || extremeRatio >= 0.72)),
+        monochrome: luminanceBins.size <= 6
+          || extremeRatio >= 0.94
+          || (transparentRatio >= 0.08 && extremeRatio >= 0.8)
+          || (smallAsset && extremeRatio >= 0.72),
         luminance: percentile(luminanceValues, 0.5) / 255
       };
     } catch (error) {
-      return { monochrome: false, luminance: 0 };
+      return { monochrome: false, luminance: 0, unreadable: error.name === 'SecurityError' };
+    }
+  }
+
+  function analyzeImage(image, filter) {
+    const analysis = analyzeMonochromeImage(image, filter);
+    if (!analysis.unreadable) return Promise.resolve(analysis);
+    const source = image.currentSrc || image.src;
+    const key = `${source}|${filter}`;
+    if (imageAnalysisCache.has(key)) return imageAnalysisCache.get(key);
+    // Bound network/decode work. Never change the displayed image's source or
+    // guess from its filename when the pixels cannot be read safely.
+    if (image.naturalWidth * image.naturalHeight > 1048576) return Promise.resolve(analysis);
+    const pending = new Promise(resolve => {
+      imageAnalysisQueue.push(async () => {
+        try {
+          if (!active) {
+            imageAnalysisCache.delete(key);
+            return resolve(analysis);
+          }
+          const response = await chrome.runtime.sendMessage({ type: 'darkify-image', source });
+          if (!response?.dataUrl) return resolve(analysis);
+          const copy = new Image();
+          copy.src = response.dataUrl;
+          await copy.decode();
+          resolve(analyzeMonochromeImage(copy, filter));
+        } catch {
+          resolve(analysis);
+        }
+      });
+      drainImageAnalyses();
+    });
+    if (imageAnalysisCache.size >= 64) imageAnalysisCache.delete(imageAnalysisCache.keys().next().value);
+    imageAnalysisCache.set(key, pending);
+    return pending;
+  }
+
+  function drainImageAnalyses() {
+    while (runningImageAnalyses < 3 && imageAnalysisQueue.length) {
+      const task = imageAnalysisQueue.shift();
+      runningImageAnalyses++;
+      task().finally(() => {
+        runningImageAnalyses--;
+        drainImageAnalyses();
+      });
     }
   }
 
@@ -717,13 +767,19 @@
   }
 
   function processImage(image, style) {
-    const classify = () => {
+    const classify = async () => {
       if (!active || !image.isConnected) return;
       const backgroundSignature = (getFinalBackgroundLuminance(image) ?? 0).toFixed(3);
-      const signature = `${image.currentSrc || image.src}|${image.naturalWidth}x${image.naturalHeight}|${backgroundSignature}`;
+      const requestedSource = image.src;
+      const signature = `${image.currentSrc || image.src}|${image.naturalWidth}x${image.naturalHeight}|${backgroundSignature}|${style.filter}`;
       if (image.dataset.fdImageSignature === signature) return;
       image.dataset.fdImageSignature = signature;
-      const analysis = analyzeMonochromeImage(image, style.filter);
+      // Also track pending/non-monochrome images, so disabling clears their
+      // signature and a cancelled decode cannot block later reclassification.
+      adjustedElements.add(image);
+      const analysis = await analyzeImage(image, style.filter);
+      // A source change, disable, or re-enable may have superseded this decode.
+      if (!active || !image.isConnected || image.src !== requestedSource || image.dataset.fdImageSignature !== signature) return;
       image.toggleAttribute(MONOCHROME_ATTRIBUTE, analysis.monochrome);
       if (analysis.monochrome) {
         setVariable(image, '--fd-original-filter', monochromeFilter(image, style, analysis));
@@ -777,8 +833,9 @@
     const snapshots = prepared.map(({ element, wasMonochrome, preserveImageState, sampling }) => {
       const cacheable = cacheableTraversalElements.has(element);
       cacheableTraversalElements.delete(element);
-      const inspectPseudos = !element.matches(PRESERVED_MEDIA_SELECTOR)
-        && element.matches('a, button, input, textarea, select, label, [role], [class*="icon" i], [class*="button" i], [class*="badge" i], [class*="menu" i], [class*="tooltip" i]');
+      // Fades/glows also belong to headings, paragraphs and ordinary divs.
+      // Repeated elements still share the same cached pseudo snapshots.
+      const inspectPseudos = !element.matches(PRESERVED_MEDIA_SELECTOR);
       const cacheKey = cacheable && !preserveImageState && !element.matches(PRESERVED_MEDIA_SELECTOR)
         ? traversalSnapshotKey(element, inspectPseudos)
         : null;

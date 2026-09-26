@@ -55,8 +55,9 @@ script cannot remain active alongside the new one.
 ## Limitations
 
 - Chrome blocks extensions on internal pages such as `chrome://extensions`.
-- Some cross-origin images cannot be inspected pixel-by-pixel; Darkify keeps
-  those images unchanged rather than risking a photographic negative.
+- Small cross-origin images are inspected using a bounded, cached copy fetched
+  by the extension. Large, inaccessible or undecodable images stay unchanged
+  rather than risking a photographic negative.
 - Unpacked extensions must be updated manually.
 
 ## Development
