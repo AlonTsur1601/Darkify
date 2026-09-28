@@ -100,7 +100,7 @@
   let settings = { enabled: true, siteOverrides: {} };
   let settingsLoaded = false;
   const changedSettingKeys = new Set();
-  const AUTO_DARK_DELAY_MS = 3000;
+  const AUTO_DARK_DELAY_MS = 1000;
   let autoDarkReadyAt = null;
   let autoDarkTimer = null;
   const imageAnalysisCache = new Map();

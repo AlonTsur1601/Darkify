@@ -76,7 +76,7 @@ These Chrome steps follow the
    Chrome's own switch on the extension card; both must be on.
 5. Choose the mode under **For this site:**
 
-   - **Automatic**: when the system prefers dark mode, wait 3 seconds and
+   - **Automatic**: when the system prefers dark mode, wait 1 second and
      darken the page only if it still looks light. An already-dark website
      is left alone. With a light system theme, Automatic does not darken it.
    - **Always force dark**: apply immediately, regardless of the system theme.
@@ -138,7 +138,7 @@ another. Each Chrome profile needs its own local installation.
   or extracting a newer copy elsewhere does not update the installed copy.
 - **Darkify is installed but does not affect a website:** check both enable
   switches, the current site's mode and, for Automatic, the system theme and
-  3-second wait. In the extension's **Details**, check its **Site access**;
+  1-second wait. In the extension's **Details**, check its **Site access**;
   it needs access to the website being tested. To use it across websites,
   allow it on all sites, or grant access only to the sites you prefer.
 - **Testing a restricted page:** Chrome internal pages (`chrome://...`), other
@@ -159,7 +159,7 @@ another. Each Chrome profile needs its own local installation.
 ## How it works
 
 - Light pages are darkened only when the system prefers dark mode.
-- Auto waits 3 seconds before checking whether the page still needs darkening,
+- Auto waits 1 second before checking whether the page still needs darkening,
   giving the website's native automatic dark theme priority. Always force dark
   applies immediately; disabling Darkify cancels any pending wait.
 - Document colors are rewritten in place across the entire page; Darkify does

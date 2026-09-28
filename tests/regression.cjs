@@ -36,7 +36,7 @@ function engine(initial = { enabled: true, siteOverrides: {} }) {
   vm.createContext(context);
   vm.runInContext(`
     const contentVersion='test', VERSION_ATTRIBUTE='data-fd-version', ACTIVE_CLASS='dark', host='example.test';
-    const AUTO_DARK_DELAY_MS=3000;
+    ${content.match(/const AUTO_DARK_DELAY_MS = \d+;/)[0]}
     let settings={enabled:true,siteOverrides:{}}, settingsLoaded=false;
     const changedSettingKeys=new Set();
     let autoDarkReadyAt=null,autoDarkTimer=null,active=false,firstScanTask=false;
@@ -69,16 +69,16 @@ function checkTransitions() {
   let e = engine();
   e.api.apply(); e.advance(10000);
   assert.equal(e.api.state(), false, 'Do not apply defaults before storage loads');
-  e.load(); e.advance(1500); e.api.apply(); e.advance(1499);
+  e.load(); e.advance(500); e.api.apply(); e.advance(499);
   assert.equal(e.api.state(), false); e.advance(1); assert.equal(e.api.state(), true);
   e.change('siteOverrides', { 'example.test': false }); assert.equal(e.api.state(), false);
   e.change('siteOverrides', { 'example.test': true }); assert.equal(e.api.state(), true);
   e.change('enabled', false); assert.equal(e.api.state(), false); assert.equal(e.pending, 0);
   e.change('enabled', true); assert.equal(e.api.state(), true);
   e.change('siteOverrides', {}); assert.equal(e.api.state(), false);
-  e.advance(2500); e.setNative(true); e.advance(500); assert.equal(e.api.state(), false);
+  e.advance(500); e.setNative(true); e.advance(500); assert.equal(e.api.state(), false);
   e = engine(); e.load(); e.api.setDark(false); e.advance(4000); assert.equal(e.api.state(), false);
-  e.api.setDark(true); e.advance(2999); assert.equal(e.api.state(), false);
+  e.api.setDark(true); e.advance(999); assert.equal(e.api.state(), false);
   e.advance(1); assert.equal(e.api.state(), true);
   e = engine({ enabled: true, siteOverrides: { 'example.test': true } });
   e.change('enabled', false); e.load(); e.advance(10000);
