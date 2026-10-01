@@ -26,20 +26,12 @@ function getActiveTabInfo(callback) {
   });
 }
 
-function formatUrl(url) {
-  // Drop any single trailing slash (e.g. https://example.com/ or https://example.com/page/)
-  if (url.length > 1 && url.endsWith('/')) {
-    return url.slice(0, -1);
-  }
-  return url;
-}
-
 function load() {
   chrome.storage.sync.get(['enabled', 'siteOverrides'], (data) => {
     globalToggle.checked = data.enabled !== false;
     getActiveTabInfo(({ url, host, supported }) => {
       currentHost = host;
-      siteNameEl.textContent = url ? formatUrl(url) : '(no active tab)';
+      siteNameEl.textContent = host || (url ? 'Unsupported page' : '(no active tab)');
 
       if (!supported) {
         siteWarningEl.textContent = 'Not available on this page';
