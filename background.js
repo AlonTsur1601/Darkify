@@ -60,7 +60,7 @@ async function injectIntoTab(tabId, version) {
     if (!frameIds.length) return;
     const target = { tabId, frameIds };
     await chrome.scripting.insertCSS({ target, files: ['dark.css'] });
-    await chrome.scripting.executeScript({ target, files: ['content.js'] });
+    await chrome.scripting.executeScript({ target, files: ['domain.js', 'content.js'] });
   } catch (error) {
     // Chrome-internal pages, the Web Store and frames without host access are
     // expected to reject injection. Other eligible tabs must still continue.

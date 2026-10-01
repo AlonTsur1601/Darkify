@@ -5,6 +5,10 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const content = fs.readFileSync(path.join(root, 'content.js'), 'utf8');
 const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
+const domainSource = fs.readFileSync(path.join(root, 'domain.js'), 'utf8');
+const domainContext = { URL };
+vm.runInNewContext(domainSource, domainContext);
+const DarkifyDomains = domainContext.DarkifyDomains;
 
 function between(start, end) {
   return content.slice(content.indexOf(start), content.indexOf(end));
@@ -16,6 +20,7 @@ function engine(initial = { enabled: true, siteOverrides: {} }) {
   const timers = new Map();
   const classes = new Set();
   const context = {
+    DarkifyDomains,
     performance: { now: () => now },
     setTimeout(fn, delay) { timers.set(++nextTimer, { fn, time: now + delay }); return nextTimer; },
     clearTimeout(id) { timers.delete(id); },
@@ -100,7 +105,10 @@ async function checkInjection() {
       scripting: {
         insertCSS: async () => {},
         executeScript: async request => {
-          if (!request.func) { injections++; return []; }
+          if (!request.func) {
+            assert.deepEqual(Array.from(request.files), ['domain.js', 'content.js']);
+            injections++; return [];
+          }
           const scope = {
             expectedVersion: request.args[0],
             window: { __darkifyContentVersion: state.live },
@@ -130,6 +138,47 @@ async function checkInjection() {
   }
 }
 
+function checkDomains() {
+  for (const [hostname, expected] of [
+    ['my.tau.ac.il', 'tau.ac.il'], ['moodle.tau.ac.il', 'tau.ac.il'],
+    ['a.b.example.co.uk', 'example.co.uk'], ['www.example.com', 'example.com'],
+    ['alice.github.io', 'alice.github.io'], ['bob.github.io', 'bob.github.io'],
+    ['a.foo.blogspot.com', 'foo.blogspot.com'], ['a.b.ck', 'a.b.ck'],
+    ['a.www.ck', 'www.ck'], ['WWW.EXAMPLE.COM.', 'example.com'],
+    ['localhost', 'localhost'], ['127.0.0.1', '127.0.0.1'], ['[::1]', '[::1]'],
+    ['www.食狮.com.cn', 'xn--85x722f.com.cn']
+  ]) assert.equal(DarkifyDomains.domain(hostname), expected, hostname);
+  const old = { 'my.tau.ac.il': true, 'moodle.tau.ac.il': false };
+  assert.equal(DarkifyDomains.overrides(old)['tau.ac.il'], false);
+  assert.equal(DarkifyDomains.overrides({ ...old, 'tau.ac.il': true })['tau.ac.il'], true);
+  let storage = { enabled: true, siteOverrides: old };
+  let url = 'https://my.tau.ac.il/first?page=1';
+  const elements = Object.fromEntries(['globalToggle', 'siteMode', 'siteName', 'siteWarning'].map(id => [id, {
+    checked: true, value: '', style: {}, classList: { toggle() {} },
+    addEventListener(event, fn) { this[event] = fn; }
+  }]));
+  const popupContext = {
+    URL, DarkifyDomains, document: { getElementById: id => elements[id] },
+    chrome: {
+      tabs: { query: (_, cb) => cb([{ url }]) },
+      storage: { sync: { get: (_, cb) => cb(storage), set: value => Object.assign(storage, value) } }
+    }
+  };
+  vm.createContext(popupContext);
+  vm.runInContext(fs.readFileSync(path.join(root, 'popup.js'), 'utf8'), popupContext);
+  assert.equal(elements.siteName.textContent, 'tau.ac.il');
+  assert.equal(elements.siteMode.value, 'off');
+  elements.siteMode.value = 'on'; elements.siteMode.change();
+  assert.deepEqual(Object.keys(storage.siteOverrides), ['tau.ac.il']);
+  url = 'https://moodle.tau.ac.il/another/path'; popupContext.load();
+  assert.equal(elements.siteMode.value, 'on');
+  elements.siteMode.value = 'auto'; elements.siteMode.change();
+  assert.deepEqual(Object.keys(storage.siteOverrides), []);
+  const e = engine({ enabled: true, siteOverrides: { 'sub.example.test': false } });
+  e.load(); e.advance(1000); assert.equal(e.api.state(), false);
+  e.change('siteOverrides', { 'other.example.test': true }); assert.equal(e.api.state(), true);
+}
+
 function checkFonts() {
   let source = 'url("font.eot?version=1"),url("font.woff") format("woff")';
   let writes = 0;
@@ -156,6 +205,6 @@ function checkFonts() {
 }
 
 (async () => {
-  checkTransitions(); await checkInjection(); checkFonts();
-  console.log('PASS: startup/settings races, mode transitions, exact Auto grace, native theme priority, same-version reload recovery, upgrade/fresh injection, persistent and idempotent font correction');
+  checkTransitions(); await checkInjection(); checkFonts(); checkDomains();
+  console.log('PASS: startup/settings races, mode transitions, exact Auto grace, native theme priority, same-version reload recovery, upgrade/fresh injection, persistent font correction, domain grouping and popup preferences');
 })().catch(error => { console.error(error); process.exitCode = 1; });

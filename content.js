@@ -20,7 +20,7 @@
   const GROUP_ATTRIBUTE = 'data-fd-group';
   const GENERATED_STYLE_ATTRIBUTE = 'data-fd-generated-styles';
   const PRESERVED_MEDIA_SELECTOR = 'img, picture, video, canvas, iframe, object, embed';
-  const host = location.hostname;
+  const host = DarkifyDomains.domain(location.hostname);
   const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
   const INTERNAL_PROPERTIES = [
@@ -1232,7 +1232,7 @@
     // A delayed initial read can return an older snapshot after onChanged.
     // Never let it overwrite a newer toggle or per-site preference.
     if (!changedSettingKeys.has('enabled') && typeof data.enabled === 'boolean') settings.enabled = data.enabled;
-    if (!changedSettingKeys.has('siteOverrides') && data.siteOverrides) settings.siteOverrides = data.siteOverrides;
+    if (!changedSettingKeys.has('siteOverrides') && data.siteOverrides) settings.siteOverrides = DarkifyDomains.overrides(data.siteOverrides);
     settingsLoaded = true;
     repairLegacyFontSources();
     scheduleApply();
@@ -1246,7 +1246,7 @@
     }
     if (changes.siteOverrides) {
       changedSettingKeys.add('siteOverrides');
-      settings.siteOverrides = changes.siteOverrides.newValue || {};
+      settings.siteOverrides = DarkifyDomains.overrides(changes.siteOverrides.newValue || {});
     }
     apply();
   });

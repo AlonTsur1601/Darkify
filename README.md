@@ -28,6 +28,7 @@ it can read and change page styling.
      manifest.json
      background.js
      content.js
+     domain.js
      dark.css
      popup.html
      popup.js
@@ -74,7 +75,7 @@ These Chrome steps follow the
    test on the Extensions page: Chrome blocks page modification there.
 4. Turn on **Extension enabled** in Darkify's popup. This is separate from
    Chrome's own switch on the extension card; both must be on.
-5. Choose the mode under **For this site:**
+5. Choose the mode under **For this domain:**
 
    - **Automatic**: when the system prefers dark mode, wait 1 second and
      darken the page only if it still looks light. An already-dark website
@@ -82,15 +83,20 @@ These Chrome steps follow the
    - **Always force dark**: apply immediately, regardless of the system theme.
      Use this on a light website to verify the installation without changing
      your system's theme.
-   - **Never touch**: do not darken this hostname.
+   - **Never touch**: do not darken this domain or any of its subdomains.
 
 6. To test disabling, turn **Extension enabled** off. Darkify's styling should
    disappear even if **Always force dark** was selected. The site selection
    is retained and dimmed for the next time you enable the extension.
 7. Restore the site mode you prefer after testing.
 
-Site choices apply to the hostname shown in the popup, not to every website.
-For example, `my.tau.ac.il` and another TAU subdomain are separate choices.
+Site choices apply to the main domain shown in the popup and all its subdomains
+and pages. For example, one choice for `tau.ac.il` covers `my.tau.ac.il` and
+`moodle.tau.ac.il`. Public and private suffixes are respected: unrelated sites
+such as `alice.github.io` and `bob.github.io` keep separate choices.
+Existing subdomain choices are grouped automatically. An existing main-domain
+choice takes priority; otherwise, conflicting choices resolve to Never touch
+until you select a new mode for the domain.
 Darkify can also run in eligible tabs that were already open.
 
 ### Updating an unpacked installation
@@ -170,7 +176,8 @@ another. Each Chrome profile needs its own local installation.
   remain unchanged.
 - Videos, canvases, embedded content and CSS image backgrounds retain their
   original appearance while their surrounding UI is darkened.
-- The popup can enable or disable Darkify globally or override one hostname.
+- The popup can enable or disable Darkify globally or override a main domain
+  together with all of its subdomains and pages.
 - Installing, updating or reloading Darkify also activates it in eligible tabs
   that were already open; those pages do not need to be refreshed manually.
 - Local dark widgets, authored glow/shadow colors, hover states and pages restored

@@ -19,7 +19,7 @@ function getActiveTabInfo(callback) {
     try {
       const u = new URL(fullUrl);
       const supported = !INTERNAL_SCHEMES.includes(u.protocol);
-      callback({ url: fullUrl, host: supported ? u.hostname : '', supported });
+      callback({ url: fullUrl, host: supported ? DarkifyDomains.domain(u.hostname) : '', supported });
     } catch (e) {
       callback({ url: fullUrl, host: '', supported: false });
     }
@@ -40,7 +40,7 @@ function load() {
         siteWarningEl.style.display = 'none';
       }
 
-      const overrides = data.siteOverrides || {};
+      const overrides = DarkifyDomains.overrides(data.siteOverrides || {});
       if (overrides[host] === true) siteMode.value = 'on';
       else if (overrides[host] === false) siteMode.value = 'off';
       else siteMode.value = 'auto';
@@ -57,7 +57,7 @@ globalToggle.addEventListener('change', () => {
 siteMode.addEventListener('change', () => {
   if (!currentHost || !globalToggle.checked) return;
   chrome.storage.sync.get(['siteOverrides'], (data) => {
-    const overrides = data.siteOverrides || {};
+    const overrides = DarkifyDomains.overrides(data.siteOverrides || {});
     if (siteMode.value === 'on') overrides[currentHost] = true;
     else if (siteMode.value === 'off') overrides[currentHost] = false;
     else delete overrides[currentHost];
